@@ -1,0 +1,19 @@
+{
+  "schema_version": "roadsense.evaluation-config/v1",
+  "config_id": "bdd100k_segmentation_v1",
+  "task": "segmentation",
+  "dataset_registry": "data/registry/bdd100k_v1.json",
+  "split": "development",
+  "sequence_disjoint": true,
+  "input": {
+    "width": 512,
+    "height": 512,
+    "preserve_aspect_ratio": true,
+    "coordinate_space": "original_mask"
+  },
+  "protocol": "roadsense.semantic-iou/v1",
+  "ignore_index": 255,
+  "model_artifact": null,
+  "evaluation_authorized": false,
+  "notes": "Template only. The ignore-index and ontology must be frozen with the prepared local labels before a real run."
+}

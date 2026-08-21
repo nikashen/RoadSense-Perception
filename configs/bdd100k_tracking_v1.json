@@ -1,0 +1,19 @@
+{
+  "schema_version": "roadsense.evaluation-config/v1",
+  "config_id": "bdd100k_tracking_v1",
+  "task": "tracking",
+  "dataset_registry": "data/registry/bdd100k_v1.json",
+  "split": "development",
+  "sequence_disjoint": true,
+  "association": {
+    "kind": "iou",
+    "iou_threshold": 0.25,
+    "max_age": 2,
+    "min_score": 0.25
+  },
+  "protocol": "roadsense.tracking-iou/v1",
+  "official_evaluator": null,
+  "model_artifact": null,
+  "evaluation_authorized": false,
+  "notes": "Template only. The local IoU tracker is a baseline; official HOTA/IDF1/MOTA evaluation requires a pinned evaluator and sequence-level manifests."
+}

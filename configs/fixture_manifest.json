@@ -1,0 +1,18 @@
+{
+  "schema_version": "roadsense.dataset-manifest/v1",
+  "dataset_name": "RoadSense deterministic city-loop fixture",
+  "source_url": "repository://src/roadsense/fixture.py",
+  "license_id": "MIT-generated-fixture",
+  "tasks": [
+    "detection",
+    "segmentation",
+    "tracking"
+  ],
+  "splits": {
+    "interactive": "24 generated frames; no train/test interpretation"
+  },
+  "content_sha256": "5eb6923e345e4c199ac01625449ce227b96cb98fba8876f5e19d4cfbce9ff253",
+  "evaluation_authorized": false,
+  "frozen": false,
+  "notes": "Canonical SHA-256 of the deterministic build_demo_payload() JSON. This is a fixture identity, not a dataset benchmark or model artifact hash."
+}

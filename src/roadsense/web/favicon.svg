@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="RoadSense mark">
+  <defs>
+    <linearGradient id="bg" x1="8" y1="5" x2="55" y2="59" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#18352d"/>
+      <stop offset="1" stop-color="#081612"/>
+    </linearGradient>
+    <linearGradient id="road" x1="32" y1="14" x2="32" y2="55" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#42e1c3"/>
+      <stop offset="1" stop-color="#b8ef67"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#bg)"/>
+  <rect x="1" y="1" width="62" height="62" rx="15" fill="none" stroke="#b8ef67" stroke-opacity=".25" stroke-width="2"/>
+  <path d="M26 53 30 12h4l4 41H26Z" fill="url(#road)" fill-opacity=".18" stroke="#b8ef67" stroke-width="2.4" stroke-linejoin="round"/>
+  <path d="M32 17v7m0 7v9m0 6v6" fill="none" stroke="#efffd8" stroke-width="2.4" stroke-linecap="round"/>
+  <path d="M14 45V32m9 13V23m18 22V27m9 18V18" fill="none" stroke="#42e1c3" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="14" cy="28" r="2.5" fill="#b8ef67"/>
+  <circle cx="23" cy="19" r="2.5" fill="#b8ef67"/>
+  <circle cx="41" cy="23" r="2.5" fill="#b8ef67"/>
+  <circle cx="50" cy="14" r="2.5" fill="#b8ef67"/>
+</svg>
