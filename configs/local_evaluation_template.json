@@ -1,0 +1,30 @@
+{
+  "schema_version": "roadsense.local-evaluation/v1",
+  "dataset_manifest": "./dataset-manifest.json",
+  "split": "development",
+  "split_sequences": {
+    "development": ["sequence-0001"],
+    "final": ["sequence-0002"]
+  },
+  "tasks": ["detection", "segmentation", "tracking"],
+  "ground_truth": "./ground-truth.json",
+  "predictions": "./predictions.json",
+  "model_artifact": {
+    "manifest": "./artifacts/detector-manifest.json",
+    "root": "./artifacts"
+  },
+  "segmentation": {
+    "ground_truth": {
+      "sequence-0001": "./masks/sequence-0001.truth.npy"
+    },
+    "predictions": {
+      "sequence-0001": "./masks/sequence-0001.pred.npy"
+    },
+    "num_classes": 5,
+    "ignore_index": 255
+  },
+  "protocols": {
+    "detection_iou_threshold": 0.5,
+    "tracking_iou_threshold": 0.5
+  }
+}

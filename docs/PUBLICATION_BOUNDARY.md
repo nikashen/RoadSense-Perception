@@ -2,7 +2,7 @@
 
 ## Current state
 
-The current release candidate is an engineering foundation. Its 24-frame
+The current `0.2.0.dev0` release candidate is an engineering foundation. Its 24-frame
 procedural city-loop is a fixture, not BDD100K, COCO, MOT, KITTI, or nuScenes.
 `evaluation_authorized=false`, `frozen=false`, and
 `benchmark_claim_available=false` are deliberate.
@@ -21,8 +21,8 @@ generalization, safety, or production readiness.
 ## Real-data release blockers
 
 Before a real benchmark can be published, the project needs a licensed local
-dataset, a sequence-disjoint frozen split, a model/weight provenance record,
+dataset, a sequence-disjoint frozen split, a verified model/weight provenance
+receipt bound into the evaluation report,
 an independent evaluator, complete runtime evidence, and a sanitized report
 whose hash binds all of the above. Failure or missing authorization must remain
 visible instead of being converted into a positive result.
-

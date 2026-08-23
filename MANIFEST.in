@@ -4,6 +4,7 @@ include configs/fixture_manifest.json
 include configs/bdd100k_detection_v1.json
 include configs/bdd100k_segmentation_v1.json
 include configs/bdd100k_tracking_v1.json
+include configs/local_evaluation_template.json
 recursive-include scripts *.py
 include data/raw/README.md
 include data/registry/bdd100k_v1.json

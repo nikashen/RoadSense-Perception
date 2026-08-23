@@ -14,9 +14,13 @@ Do not create a benchmark release until all of the following are present:
 
 1. Current dataset terms reviewed and recorded.
 2. Archive/tree hashes and sequence-aware split manifest.
-3. Model artifact manifest with checkpoint hash and license.
+3. Model artifact manifest with checkpoint hash and license, plus a verified
+   receipt bound into the local evaluation report.
 4. Frozen Development configuration and independent Final evaluator receipt.
-5. Reproducible runtime measurements with device and dependency versions.
+5. Reproducible runtime measurements with device and dependency versions. The
+   fixture `roadsense.runtime-audit/v1` record described in
+   [Runtime audit](RUNTIME_AUDIT.md) is a plumbing diagnostic only; a benchmark
+   release requires a separately authorized real-model record.
 6. Sanitized aggregate report whose hashes bind the inputs above.
 7. Release assets pass `twine check`, fresh-wheel smoke, and Pages verification.
 

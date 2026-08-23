@@ -50,6 +50,8 @@ jobs:
           /tmp/roadsense-wheel-smoke/bin/python -m pip install "httpx>=0.28,<0.29"
           /tmp/roadsense-wheel-smoke/bin/python -m pip check
           /tmp/roadsense-wheel-smoke/bin/python -m roadsense smoke --json
+          /tmp/roadsense-wheel-smoke/bin/python -m roadsense evaluate-local --fixture --json
+          /tmp/roadsense-wheel-smoke/bin/python -m roadsense benchmark --iterations 1 --json > /tmp/roadsense-runtime.json
           /tmp/roadsense-wheel-smoke/bin/python -c "from roadsense.api import create_app; from fastapi.testclient import TestClient; app=create_app(); client=TestClient(app); assert client.get('/').status_code == 200; assert client.get('/app.js').status_code == 200"
       - shell: bash
         run: |
@@ -62,6 +64,8 @@ jobs:
           /tmp/roadsense-sdist-smoke/bin/python -m pip install "httpx>=0.28,<0.29"
           /tmp/roadsense-sdist-smoke/bin/python -m pip check
           /tmp/roadsense-sdist-smoke/bin/python -m roadsense smoke --json
+          /tmp/roadsense-sdist-smoke/bin/python -m roadsense evaluate-local --fixture --json
+          /tmp/roadsense-sdist-smoke/bin/python -m roadsense benchmark --iterations 1 --json > /tmp/roadsense-sdist-runtime.json
           /tmp/roadsense-sdist-smoke/bin/python -c "from roadsense.api import create_app; from fastapi.testclient import TestClient; app=create_app(); client=TestClient(app); assert client.get('/').status_code == 200; assert client.get('/app.js').status_code == 200"
 
   fresh-wheel-windows:
@@ -86,4 +90,7 @@ jobs:
           & $python -m pip install "httpx>=0.28,<0.29"
           & $python -m pip check
           & $python -m roadsense smoke --json
+          & $python -m roadsense evaluate-local --fixture --json
+          $runtime = Join-Path $env:RUNNER_TEMP "roadsense-runtime.json"
+          & $python -m roadsense benchmark --iterations 1 --json > $runtime
           & $python -c "from roadsense.api import create_app; from fastapi.testclient import TestClient; app=create_app(); client=TestClient(app); assert client.get('/').status_code == 200; assert client.get('/app.js').status_code == 200"
