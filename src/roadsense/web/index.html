@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="RoadSense Perception Lab — an evidence-first, deterministic fixture for exploring detection, segmentation, and tracking interfaces."
+      content="RoadSense Perception Lab — v0.2.0.dev0 evidence-first fixture with local artifact, evaluation, and runtime audit contracts."
     />
     <meta name="theme-color" content="#071411" />
-    <title>RoadSense Perception Lab</title>
+    <title>RoadSense Perception Lab · v0.2.0.dev0</title>
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="styles.css" />
     <script src="app.js" defer></script>
@@ -42,7 +42,7 @@
         </button>
       </nav>
 
-      <div class="header-status" aria-live="polite">
+      <div class="header-status" role="status" aria-live="polite">
         <span class="status-dot" aria-hidden="true"></span>
         <span id="data-source-label">Loading fixture…</span>
       </div>
@@ -52,7 +52,7 @@
       <section class="view is-active" id="lab-view" data-view-panel="lab">
         <div class="intro-row">
           <div>
-            <p class="eyebrow">2D ROAD PERCEPTION · V0.1</p>
+            <p class="eyebrow">2D ROAD PERCEPTION · V0.2.0 DEV · CAPABILITY PREVIEW</p>
             <h1>Inspect the scene, frame by frame.</h1>
             <p class="intro-copy">
               A deterministic sequence for testing detection, semantic segmentation, and
@@ -250,7 +250,7 @@
                   <p class="section-kicker">FRAME INVENTORY</p>
                   <h2 id="objects-title">Objects</h2>
                 </div>
-                <span class="object-count" id="object-count">0 shown</span>
+                <span class="object-count" id="object-count" aria-live="polite">0 shown</span>
               </div>
               <div class="object-list" id="object-list" role="group" aria-label="Objects in current frame"></div>
               <div class="object-detail" id="object-detail" aria-live="polite"></div>
@@ -329,6 +329,46 @@
             </ul>
           </article>
 
+          <article class="panel evidence-card capability-card" aria-labelledby="capabilities-title">
+            <p class="section-kicker">V0.2.0 DEV OPERATOR LANE</p>
+            <h2 id="capabilities-title">Attach auditable inputs locally</h2>
+            <p>
+              The public replay stays fixture-only. From a local checkout, the same contracts now
+              provide explicit seams for a verified model artifact, sequence-aware evaluation, and
+              runtime diagnostics—without downloading data or loading a model in this page.
+            </p>
+            <ul class="capability-list">
+              <li>
+                <span class="capability-index">01</span>
+                <span class="capability-copy">
+                  <strong>Artifact audit</strong>
+                  <small><code>roadsense verify-artifact</code> · local manifest + hash receipt</small>
+                </span>
+                <span class="capability-state">LOCAL</span>
+              </li>
+              <li>
+                <span class="capability-index">02</span>
+                <span class="capability-copy">
+                  <strong>Local evaluation</strong>
+                  <small><code>roadsense evaluate-local</code> · split-aware metrics</small>
+                </span>
+                <span class="capability-state">LOCAL</span>
+              </li>
+              <li>
+                <span class="capability-index">03</span>
+                <span class="capability-copy">
+                  <strong>Runtime audit</strong>
+                  <small><code>roadsense benchmark</code> · fixture pipeline diagnostics</small>
+                </span>
+                <span class="capability-state">DIAGNOSTIC</span>
+              </li>
+            </ul>
+            <p class="capability-note" role="note">
+              These commands emit receipts and reports for review; they do not turn this replay
+              into a benchmark claim.
+            </p>
+          </article>
+
           <article class="panel evidence-card path-card">
             <p class="section-kicker">EVIDENCE LADDER</p>
             <h2>Path from fixture to benchmark</h2>
@@ -339,11 +379,11 @@
               </li>
               <li>
                 <span>02</span>
-                <div><strong>Reproducible inference</strong><small>Versioned model + environment</small></div>
+                <div><strong>Verified artifact</strong><small>Manifest + checkpoint receipt</small></div>
               </li>
               <li>
                 <span>03</span>
-                <div><strong>Frozen evaluation</strong><small>Dataset receipt + metric protocol</small></div>
+                <div><strong>Local evaluation</strong><small>Sequence split + metric protocol</small></div>
               </li>
               <li>
                 <span>04</span>
@@ -362,7 +402,7 @@
     </main>
 
     <footer class="site-footer">
-      <span>RoadSense Perception · 2D perception contract v0.1</span>
+      <span>RoadSense Perception · 2D perception contract v0.2.0.dev0 capability preview</span>
       <span>Detection · Segmentation · Tracking</span>
     </footer>
 

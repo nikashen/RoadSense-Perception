@@ -1140,8 +1140,13 @@
           ? `Versioned Pages payload unavailable; using built-in fixture (${state.sourceReason})`
           : `The local demo endpoint was not accepted (${state.sourceReason})`;
       elements.headerStatus.title = reasonLabel;
+      elements.headerStatus.setAttribute(
+        "aria-label",
+        `${elements.sourceLabel.textContent}. ${reasonLabel}`,
+      );
     } else {
       elements.headerStatus.removeAttribute("title");
+      elements.headerStatus.removeAttribute("aria-label");
     }
   }
 
