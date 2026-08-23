@@ -81,6 +81,8 @@ def test_pages_build_contains_relative_fixture_contract() -> None:
         assert len(demo["frames"]) == 24
         assert demo["evidence"]["benchmark_claim_available"] is False
         assert "Array.from({ length: 24 }" in app_source
+        assert "api_unavailable:" in app_source
+        assert "dataset.label" in app_source
         assert all((built / asset).is_file() for asset in manifest["assets"])
         assert set(manifest["asset_sha256"]) == set(manifest["assets"])
     finally:

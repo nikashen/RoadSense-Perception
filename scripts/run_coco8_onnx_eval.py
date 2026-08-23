@@ -21,6 +21,8 @@ import hashlib
 import importlib.metadata
 import json
 import math
+import numbers
+import operator
 import os
 import platform
 import shutil
@@ -28,7 +30,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 
@@ -143,9 +145,28 @@ def _sha256_file(path: Path) -> tuple[str, int]:
     return digest.hexdigest(), size
 
 
-def _tree_inventory(root: Path) -> tuple[list[dict[str, object]], str]:
+def _tree_inventory(
+    root: Path, *, exclude: Path | None = None
+) -> tuple[list[dict[str, object]], str]:
+    """Hash a dataset tree, optionally excluding a generated output subtree."""
+
+    root = root.resolve()
+    excluded = exclude.resolve() if exclude is not None else None
+
+    def is_excluded(path: Path) -> bool:
+        if excluded is None:
+            return False
+        try:
+            path.relative_to(excluded)
+        except ValueError:
+            return False
+        return True
+
     files: list[dict[str, object]] = []
-    for path in sorted(item for item in root.rglob("*") if item.is_file()):
+    entries = [item for item in sorted(root.rglob("*")) if not is_excluded(item)]
+    if any(item.is_symlink() for item in entries):
+        raise ValueError("dataset tree must not contain symlink entries")
+    for path in (item for item in entries if item.is_file()):
         digest, size = _sha256_file(path)
         files.append(
             {
@@ -157,6 +178,29 @@ def _tree_inventory(root: Path) -> tuple[list[dict[str, object]], str]:
     if not files:
         raise ValueError(f"dataset directory is empty: {root}")
     return files, canonical_sha256(files)
+
+
+def _assert_dataset_sources_stable(
+    dataset_root: Path,
+    expected_inventory: list[dict[str, object]],
+    expected_tree_hash: str,
+    archive_path: Path,
+    expected_archive_hash: str,
+    expected_archive_size: int,
+    *,
+    exclude: Path | None = None,
+) -> None:
+    """Fail closed if the raw dataset changed during model inference."""
+
+    observed_inventory, observed_tree_hash = _tree_inventory(dataset_root, exclude=exclude)
+    if observed_tree_hash != expected_tree_hash or observed_inventory != expected_inventory:
+        raise ValueError("COCO8 dataset tree changed during evaluation")
+    observed_archive_hash, observed_archive_size = _sha256_file(archive_path)
+    if (
+        observed_archive_hash != expected_archive_hash
+        or observed_archive_size != expected_archive_size
+    ):
+        raise ValueError("COCO8 dataset archive changed during evaluation")
 
 
 def _runtime_lock(path: Path) -> tuple[str, str]:
@@ -288,6 +332,48 @@ def _decode_predictions(
     nms_iou: float,
     max_detections: int,
 ) -> tuple[Detection, ...]:
+    if isinstance(scale, bool) or not isinstance(scale, numbers.Real):
+        raise TypeError("letterbox scale must be a real number")
+    scale = float(scale)
+    if not math.isfinite(scale) or scale <= 0.0:
+        raise ValueError("letterbox scale must be a finite positive number")
+    if isinstance(width, bool) or not isinstance(width, numbers.Integral):
+        raise TypeError("source image width must be an integer")
+    if isinstance(height, bool) or not isinstance(height, numbers.Integral):
+        raise TypeError("source image height must be an integer")
+    width = operator.index(width)
+    height = operator.index(height)
+    for name, value in (("pad_x", pad_x), ("pad_y", pad_y)):
+        if isinstance(value, bool) or not isinstance(value, numbers.Integral):
+            raise TypeError(f"{name} must be an integer")
+        if value < 0:
+            raise ValueError(f"{name} must be non-negative")
+    pad_x = operator.index(pad_x)
+    pad_y = operator.index(pad_y)
+    if width < 1 or height < 1:
+        raise ValueError("source image dimensions must be positive")
+    if isinstance(score_threshold, bool) or not isinstance(score_threshold, numbers.Real):
+        raise TypeError("score_threshold must be a real number in [0, 1]")
+    score_threshold = float(score_threshold)
+    if not math.isfinite(score_threshold) or not 0.0 <= score_threshold <= 1.0:
+        raise ValueError("score_threshold must be in [0, 1]")
+    if isinstance(nms_iou, bool) or not isinstance(nms_iou, numbers.Real):
+        raise TypeError("nms_iou must be a real number in (0, 1]")
+    nms_iou = float(nms_iou)
+    if not math.isfinite(nms_iou) or not 0.0 < nms_iou <= 1.0:
+        raise ValueError("nms_iou must be in (0, 1]")
+    if isinstance(max_detections, bool):
+        raise TypeError("max_detections must be a positive integer")
+    try:
+        max_detections = operator.index(max_detections)
+    except TypeError as exc:
+        raise TypeError("max_detections must be a positive integer") from exc
+    if max_detections < 1:
+        raise ValueError("max_detections must be positive")
+    if not isinstance(output, np.ndarray) or not np.issubdtype(output.dtype, np.number):
+        raise ValueError("ONNX output must be a numeric NumPy array")
+    if not np.all(np.isfinite(output)):
+        raise ValueError("ONNX output must contain only finite numbers")
     if output.ndim != 3 or output.shape[0] != 1:
         raise ValueError(f"unexpected ONNX output shape: {output.shape}")
     values = output[0]
@@ -297,7 +383,11 @@ def _decode_predictions(
         raise ValueError(f"expected 84-channel YOLO output, got {output.shape}")
     if values.shape[1] != 4 + COCO_CLASS_COUNT:
         raise ValueError(f"expected 84-channel YOLO output, got {output.shape}")
+    if values.shape[0] < 1:
+        raise ValueError("ONNX output contains no detection candidates")
     class_scores = values[:, 4:]
+    if np.any(class_scores < 0.0) or np.any(class_scores > 1.0):
+        raise ValueError("ONNX class scores must be in [0, 1]")
     class_ids = np.argmax(class_scores, axis=1)
     scores = class_scores[np.arange(class_scores.shape[0]), class_ids]
     keep = np.flatnonzero(scores >= score_threshold)
@@ -422,6 +512,32 @@ def _ort_model_reference(
     return ort_reference, staging
 
 
+def _validate_onnx_session(session: Any) -> tuple[Any, Any]:
+    """Fail closed when a verified file does not expose the YOLO11 graph contract."""
+
+    inputs = session.get_inputs()
+    outputs = session.get_outputs()
+    if len(inputs) != 1 or len(outputs) != 1:
+        raise ValueError("YOLO11 runner requires exactly one input and one output tensor")
+    input_meta = inputs[0]
+    output_meta = outputs[0]
+    if input_meta.name != "images" or output_meta.name != "output0":
+        raise ValueError(
+            "unexpected ONNX tensor names; expected input 'images' and output 'output0'"
+        )
+    if input_meta.type != "tensor(float)" or output_meta.type != "tensor(float)":
+        raise ValueError("YOLO11 runner requires float32 input and output tensors")
+    input_shape = input_meta.shape
+    output_shape = output_meta.shape
+    if len(input_shape) != 4 or input_shape[1] != 3:
+        raise ValueError(f"unexpected YOLO11 input shape: {input_shape}")
+    if len(output_shape) != 3 or output_shape[1] != 4 + COCO_CLASS_COUNT:
+        raise ValueError(f"unexpected YOLO11 output shape: {output_shape}")
+    if "CPUExecutionProvider" not in session.get_providers():
+        raise ValueError("CPUExecutionProvider is required for this local evaluation")
+    return input_meta, output_meta
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset-root", type=Path, required=True)
@@ -450,6 +566,10 @@ def main(argv: list[str] | None = None) -> int:
         output_dir = args.output_dir.expanduser().resolve()
         if not dataset_root.is_dir() or not model_path.is_file() or not archive_path.is_file():
             raise ValueError("dataset root, model, and archive must exist locally")
+        if output_dir == dataset_root or dataset_root in output_dir.parents:
+            raise ValueError("output-dir must be outside the dataset root")
+        if output_dir == model_path or output_dir in model_path.parents:
+            raise ValueError("output-dir must not contain the model artifact")
         archive_hash, archive_size = _sha256_file(archive_path)
         if archive_hash != DATASET_ARCHIVE_SHA256:
             raise ValueError(
@@ -459,7 +579,7 @@ def main(argv: list[str] | None = None) -> int:
         if model_hash != MODEL_SHA256:
             raise ValueError(f"unexpected model SHA-256: expected {MODEL_SHA256}, got {model_hash}")
         images = _image_paths(dataset_root, args.split)
-        _inventory, tree_hash = _tree_inventory(dataset_root)
+        _inventory, tree_hash = _tree_inventory(dataset_root, exclude=output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         artifact_root = _common_root(model_path.parent, output_dir)
         artifact_root_ref = _relative_path(artifact_root, output_dir)
@@ -547,8 +667,12 @@ def main(argv: list[str] | None = None) -> int:
             ) from exc
         ort_model_path, _staging = _ort_model_reference(model_path, model_hash)
         session = ort.InferenceSession(ort_model_path, providers=["CPUExecutionProvider"])
-        input_meta = session.get_inputs()[0]
-        output_meta = session.get_outputs()[0]
+        post_load_hash, post_load_size = _sha256_file(model_path)
+        if post_load_hash != model_hash or post_load_size != model_size:
+            raise ValueError(
+                "model artifact changed while the ONNX Runtime session was initialized"
+            )
+        input_meta, output_meta = _validate_onnx_session(session)
         input_name = input_meta.name
         output_name = output_meta.name
         truth_sequences: list[dict[str, object]] = []
@@ -603,6 +727,15 @@ def main(argv: list[str] | None = None) -> int:
                     ],
                 }
             )
+        _assert_dataset_sources_stable(
+            dataset_root,
+            _inventory,
+            tree_hash,
+            archive_path,
+            archive_hash,
+            archive_size,
+            exclude=output_dir,
+        )
         sequence_ids = [item["sequence_id"] for item in truth_sequences]
         dataset_manifest = DatasetManifest.model_validate(
             {
@@ -648,8 +781,26 @@ def main(argv: list[str] | None = None) -> int:
         }
         spec_path = output_dir / "evaluation.json"
         write_json_atomic(spec_path, spec)
-        report = evaluate_local(spec_path)
         report_path = output_dir / "report.json"
+        _assert_dataset_sources_stable(
+            dataset_root,
+            _inventory,
+            tree_hash,
+            archive_path,
+            archive_hash,
+            archive_size,
+            exclude=output_dir,
+        )
+        report = evaluate_local(spec_path, output_path=report_path)
+        _assert_dataset_sources_stable(
+            dataset_root,
+            _inventory,
+            tree_hash,
+            archive_path,
+            archive_hash,
+            archive_size,
+            exclude=output_dir,
+        )
         write_json_atomic(report_path, report)
         run_material: dict[str, object] = {
             "schema_version": "roadsense.real-evaluation-run/v1",

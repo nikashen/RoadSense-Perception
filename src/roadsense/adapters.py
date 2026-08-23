@@ -22,7 +22,16 @@ from typing import Any, Generic, Protocol, TypeVar, cast, runtime_checkable
 
 from pydantic import Field, field_validator, model_validator
 
-from roadsense.contracts import SHA256, StrictModel, TaskKind, freeze_value, validate_bool
+from roadsense.contracts import (
+    SHA256,
+    StrictModel,
+    TaskKind,
+    _strict_integer,
+    _strict_real,
+    _strict_text,
+    freeze_value,
+    validate_bool,
+)
 from roadsense.json_io import canonical_sha256, load_strict_json
 
 MODEL_ARTIFACT_SCHEMA = "roadsense.model-artifact-manifest/v1"
@@ -61,13 +70,29 @@ def _validate_metadata(value: object, *, field_name: str, depth: int = 0) -> obj
 
 
 def _reject_boolean_integer(value: object, *, field_name: str) -> object:
-    """Prevent Python's ``bool``-is-an-``int`` coercion in numeric fields."""
+    """Reject strings/floats/bools instead of silently coercing integers."""
 
-    if isinstance(value, bool):
-        raise ValueError(  # noqa: TRY004 - Pydantic must wrap this in ValidationError.
-            f"{field_name} must be an integer, not a boolean"
+    return _strict_integer(value, field_name)
+
+
+def _strict_finite_real(value: object, *, field_name: str) -> float:
+    """Accept real scalars only and reject non-finite preprocessing values."""
+
+    result = _strict_real(value, field_name)
+    if not math.isfinite(result):
+        raise ValueError(f"{field_name} must be finite")
+    return result
+
+
+def _strict_real_sequence(value: object, *, field_name: str) -> object:
+    if not isinstance(value, (list, tuple)):
+        raise ValueError(  # noqa: TRY004 - Pydantic should report a field validation error.
+            f"{field_name} must be an array of finite numbers"
         )
-    return value
+    return tuple(
+        _strict_finite_real(item, field_name=f"{field_name}[{index}]")
+        for index, item in enumerate(value)
+    )
 
 
 class ArtifactVerificationError(ValueError):
@@ -162,23 +187,15 @@ class ArtifactPreprocessingSpec(StrictModel):
     std: tuple[float, ...] = ()
     pad_value: float = 0.0
 
-    @field_validator("scale", "pad_value", mode="after")
+    @field_validator("scale", "pad_value", mode="before")
     @classmethod
-    def preprocessing_values_must_be_finite(cls, value: float) -> float:
-        import math
+    def preprocessing_values_must_be_finite(cls, value: object, info: Any) -> float:
+        return _strict_finite_real(value, field_name=str(info.field_name))
 
-        if not math.isfinite(value):
-            raise ValueError("preprocessing values must be finite")
-        return value
-
-    @field_validator("mean", "std", mode="after")
+    @field_validator("mean", "std", mode="before")
     @classmethod
-    def normalization_values_must_be_finite(cls, value: tuple[float, ...]) -> tuple[float, ...]:
-        import math
-
-        if any(not math.isfinite(item) for item in value):
-            raise ValueError("normalization values must be finite")
-        return value
+    def normalization_values_must_be_finite(cls, value: object, info: Any) -> object:
+        return _strict_real_sequence(value, field_name=str(info.field_name))
 
     @model_validator(mode="after")
     def validate_normalization(self) -> ArtifactPreprocessingSpec:
@@ -283,12 +300,10 @@ class ModelArtifactManifest(StrictModel):
             raise ValueError("artifact hashes cannot be all-zero placeholders")
         return value
 
-    @field_validator("source", "license_id")
+    @field_validator("source", "license_id", mode="before")
     @classmethod
-    def text_fields_must_not_be_blank(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("text fields must not be blank")
-        return value
+    def text_fields_must_not_be_blank(cls, value: object) -> str:
+        return _strict_text(value, "artifact text field")
 
     @field_validator("graph_metadata", "calibration", "quantization", mode="after")
     @classmethod
@@ -363,6 +378,11 @@ class ArtifactVerification(StrictModel):
     artifact_size_bytes: int = Field(ge=1)
     dependency_lock_sha256: str | None = Field(default=None, pattern=SHA256.pattern)
     verified: bool = True
+
+    @field_validator("artifact_size_bytes", mode="before")
+    @classmethod
+    def artifact_size_must_be_integer(cls, value: object) -> object:
+        return _reject_boolean_integer(value, field_name="artifact_size_bytes")
 
     @field_validator("verified", mode="before")
     @classmethod

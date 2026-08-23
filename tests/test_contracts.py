@@ -179,6 +179,29 @@ def test_manifest_rejects_coerced_evidence_flags() -> None:
         DatasetManifest.model_validate(payload)
 
 
+@pytest.mark.parametrize("field", ["dataset_name", "source_url", "license_id"])
+def test_manifest_rejects_padded_identity_text(field: str) -> None:
+    payload = _manifest_payload()
+    payload[field] = " value "
+    with pytest.raises(ValidationError, match="padded"):
+        DatasetManifest.model_validate(payload)
+
+
+@pytest.mark.parametrize("field", ["dataset_name", "source_url", "license_id"])
+def test_manifest_rejects_non_string_identity_text(field: str) -> None:
+    payload = _manifest_payload()
+    payload[field] = b"value"
+    with pytest.raises(ValidationError, match="string"):
+        DatasetManifest.model_validate(payload)
+
+
+def test_manifest_rejects_padded_split_description() -> None:
+    payload = _manifest_payload()
+    payload["splits"] = {"dev": " fixed "}
+    with pytest.raises(ValidationError, match="padded"):
+        DatasetManifest.model_validate(payload)
+
+
 def test_frozen_report_requires_manifest_hash() -> None:
     with pytest.raises(ValidationError, match="manifest"):
         EvaluationReport(
@@ -228,6 +251,60 @@ def test_evaluation_report_requires_named_metrics() -> None:
             evaluation_authorized=False,
             frozen=False,
             metrics={},
+            claim_boundary="test only",
+        )
+
+
+def test_evaluation_report_rejects_padded_protocol_text() -> None:
+    with pytest.raises(ValidationError, match="padded"):
+        EvaluationReport(
+            schema_version="roadsense.evaluation-report/v1",
+            protocol_id=" test/v1",
+            evidence_level=EvidenceLevel.FIXTURE,
+            evaluation_authorized=False,
+            frozen=False,
+            metrics={"ap": 0.5},
+            claim_boundary="test only",
+        )
+
+
+def test_evaluation_report_rejects_non_string_protocol_text() -> None:
+    with pytest.raises(ValidationError, match="string"):
+        EvaluationReport(
+            schema_version="roadsense.evaluation-report/v1",
+            protocol_id=b"test/v1",  # type: ignore[arg-type]
+            evidence_level=EvidenceLevel.DEVELOPMENT,
+            evaluation_authorized=False,
+            frozen=False,
+            metrics={"ap": 0.5},
+            claim_boundary="test only",
+        )
+
+
+@pytest.mark.parametrize("value", ["0.5", True, None])
+def test_evaluation_report_rejects_lossy_metric_coercion(value: object) -> None:
+    with pytest.raises(ValidationError, match="metrics"):
+        EvaluationReport(
+            schema_version="roadsense.evaluation-report/v1",
+            protocol_id="test/v1",
+            evidence_level=EvidenceLevel.FIXTURE,
+            evaluation_authorized=False,
+            frozen=False,
+            metrics={"ap": value},  # type: ignore[dict-item]
+            claim_boundary="test only",
+        )
+
+
+@pytest.mark.parametrize("value", [None, [], "0.5"])
+def test_evaluation_report_rejects_non_object_metrics(value: object) -> None:
+    with pytest.raises(ValidationError, match="metrics"):
+        EvaluationReport(
+            schema_version="roadsense.evaluation-report/v1",
+            protocol_id="test/v1",
+            evidence_level=EvidenceLevel.DEVELOPMENT,
+            evaluation_authorized=False,
+            frozen=False,
+            metrics=value,  # type: ignore[arg-type]
             claim_boundary="test only",
         )
 

@@ -1646,8 +1646,14 @@ input[type="range"]::-moz-range-thumb {
   }
 
   .frame-chip::before {
-    content: "•";
+    content: attr(data-label);
     font-size: 0.58rem;
+  }
+
+  /* The wider breakpoint hides even labels to reduce density; restore all
+     frame numbers on touch-sized layouts so every chip remains identifiable. */
+  .frame-chip:nth-child(even)::before {
+    content: attr(data-label);
   }
 
   .panel-header.compact {

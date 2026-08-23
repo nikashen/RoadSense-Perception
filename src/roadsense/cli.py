@@ -159,7 +159,7 @@ def _run_evaluate_local(
                 + ", ".join(f"{key}={value}" for key, value in summary.items())
             )
             return 0
-        report = evaluate_local(cast(Path, spec))
+        report = evaluate_local(cast(Path, spec), output_path=output)
         if output is not None:
             path = write_json_atomic(output, report)
             if not as_json:
@@ -176,7 +176,7 @@ def _run_benchmark(output: Path, iterations: int, as_json: bool) -> int:
     try:
         record = build_fixture_runtime_record(iterations=iterations)
         path = write_json_atomic(output, record.model_dump(mode="json"))
-    except (OSError, ValueError, TypeError, RuntimeError) as exc:
+    except (OSError, ValueError, TypeError, RuntimeError, MemoryError) as exc:
         print(f"runtime audit failed: {exc}", file=sys.stderr)
         return 2
     if as_json:
@@ -229,7 +229,14 @@ def _run_audit_artifact(
                 return 0
         print(json.dumps(result, ensure_ascii=False, allow_nan=False, sort_keys=True))
         return 0
-    except (ArtifactVerificationError, OSError, UnicodeError, TypeError, ValueError) as exc:
+    except (
+        ArtifactVerificationError,
+        OSError,
+        UnicodeError,
+        TypeError,
+        ValueError,
+        MemoryError,
+    ) as exc:
         print(f"artifact audit failed: {exc}", file=sys.stderr)
         return 2
 
@@ -239,7 +246,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "smoke":
         return _run_smoke(args.as_json)
     if args.command == "report":
-        path = write_json_atomic(args.output, build_fixture_report())
+        try:
+            path = write_json_atomic(args.output, build_fixture_report())
+        except (OSError, TypeError, ValueError, MemoryError) as exc:
+            print(f"report generation failed: {exc}", file=sys.stderr)
+            return 2
         print(path)
         return 0
     if args.command in {"benchmark", "runtime-audit"}:
@@ -247,7 +258,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "audit-manifest":
         try:
             manifest = DatasetManifest.model_validate(load_strict_json(args.manifest))
-        except (OSError, UnicodeError, ValueError) as exc:
+        except (OSError, UnicodeError, TypeError, ValueError, MemoryError) as exc:
             print(f"manifest audit failed: {exc}", file=sys.stderr)
             return 2
         print(manifest.model_dump_json(indent=2))

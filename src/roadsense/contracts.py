@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import numbers
 import re
+from collections.abc import Mapping
 from enum import Enum
 from typing import Annotated, Any, Literal, NoReturn, cast
 
@@ -82,6 +83,50 @@ def _strict_real(value: object, field_name: str) -> float:
     if isinstance(value, bool) or not isinstance(value, numbers.Real):
         raise ValueError(f"{field_name} must be a number")  # noqa: TRY004 - Pydantic wraps it.
     return float(value)
+
+
+def _strict_metrics(value: object, field_name: str = "metrics") -> dict[str, float]:
+    """Validate report metrics without Pydantic's lossy numeric coercions.
+
+    Reports are evidence artifacts.  Accepting ``"0.9"`` or ``True`` here
+    would make malformed JSON look like a measured score and would change the
+    canonical report hash after validation.  JSON numbers arrive as Python
+    ``int``/``float`` values, while NumPy real scalars remain useful to local
+    callers, so reuse the strict real boundary and normalize only after it has
+    been checked.
+    """
+
+    if not isinstance(value, Mapping):
+        raise ValueError(  # noqa: TRY004 - validators expose malformed JSON as validation errors.
+            f"{field_name} must be an object of finite numbers"
+        )
+    result: dict[str, float] = {}
+    for key, item in value.items():
+        if (
+            not isinstance(key, str)
+            or not key.strip()
+            or key != key.strip()
+            or any(ord(character) < 32 or ord(character) == 127 for character in key)
+        ):
+            raise ValueError(f"{field_name} keys must be non-empty strings")
+        result[key] = _strict_real(item, f"{field_name}.{key}")
+        if not math.isfinite(result[key]):
+            raise ValueError(f"{field_name}.{key} must be finite")
+    return result
+
+
+def _strict_text(value: object, field_name: str) -> str:
+    """Reject blank, padded, or control-character protocol text."""
+
+    if not isinstance(value, str):
+        raise ValueError(  # noqa: TRY004 - validators expose malformed JSON as validation errors.
+            f"{field_name} must be a string"
+        )
+    if not value.strip() or value != value.strip():
+        raise ValueError(f"{field_name} must not be blank or padded")
+    if any(ord(character) < 32 or ord(character) == 127 for character in value):
+        raise ValueError(f"{field_name} must not contain control characters")
+    return value
 
 
 class StringEnum(str, Enum):
@@ -214,14 +259,32 @@ class DatasetManifest(StrictModel):
     frozen: bool
     notes: Annotated[str, Field(max_length=2_000)] = ""
 
+    @field_validator("dataset_name", "source_url", "license_id", mode="before")
+    @classmethod
+    def identity_text_must_be_clean(cls, value: object, info: Any) -> str:
+        return _strict_text(value, str(info.field_name))
+
     @field_validator("evaluation_authorized", "frozen", mode="before")
     @classmethod
     def flags_must_be_boolean(cls, value: object) -> bool:
         return validate_bool(value)
 
+    @field_validator("splits", mode="before")
+    @classmethod
+    def split_text_must_be_clean(cls, value: object) -> object:
+        if not isinstance(value, Mapping):
+            return value
+        return {
+            _strict_text(key, "split name"): _strict_text(item, f"splits[{key}]")
+            for key, item in value.items()
+        }
+
     @field_validator("splits", mode="after")
     @classmethod
     def freeze_splits(cls, value: dict[str, str]) -> dict[str, str]:
+        for key, item in value.items():
+            _strict_text(key, "split name")
+            _strict_text(item, f"splits[{key}]")
         return cast(dict[str, str], freeze_value(value))
 
     @model_validator(mode="after")
@@ -247,10 +310,20 @@ class EvaluationReport(StrictModel):
     metrics: dict[str, float]
     claim_boundary: Annotated[str, Field(min_length=1, max_length=2_000)]
 
+    @field_validator("protocol_id", "claim_boundary", mode="before")
+    @classmethod
+    def report_text_must_be_clean(cls, value: object, info: Any) -> str:
+        return _strict_text(value, str(info.field_name))
+
     @field_validator("evaluation_authorized", "frozen", mode="before")
     @classmethod
     def flags_must_be_boolean(cls, value: object) -> bool:
         return validate_bool(value)
+
+    @field_validator("metrics", mode="before")
+    @classmethod
+    def metrics_must_be_strict_numbers(cls, value: object) -> dict[str, float]:
+        return _strict_metrics(value)
 
     @field_validator("metrics", mode="after")
     @classmethod

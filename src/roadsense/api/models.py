@@ -5,9 +5,23 @@ from __future__ import annotations
 import math
 from typing import Any, Literal, cast
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictFloat,
+    StrictInt,
+    field_validator,
+    model_validator,
+)
 
-from roadsense.contracts import SHA256, EvidenceLevel, freeze_value, validate_bool
+from roadsense.contracts import (
+    SHA256,
+    EvidenceLevel,
+    _strict_metrics,
+    freeze_value,
+    validate_bool,
+)
 from roadsense.evidence import compute_report_id
 
 EXPECTED_DEMO_CADENCE_MS = 100
@@ -46,17 +60,17 @@ class ReadinessResponse(APIModel):
 
 
 class SizeResponse(APIModel):
-    width: int = Field(ge=1, le=100_000)
-    height: int = Field(ge=1, le=100_000)
+    width: StrictInt = Field(ge=1, le=100_000)
+    height: StrictInt = Field(ge=1, le=100_000)
 
 
 class DemoObjectResponse(APIModel):
     id: str = Field(min_length=1)
-    track_id: int = Field(ge=0)
+    track_id: StrictInt = Field(ge=0)
     label: str = Field(min_length=1)
-    category_id: int = Field(ge=0)
-    confidence: float = Field(ge=0.0, le=1.0)
-    bbox: tuple[float, float, float, float]
+    category_id: StrictInt = Field(ge=0)
+    confidence: StrictFloat = Field(ge=0.0, le=1.0)
+    bbox: tuple[StrictFloat, StrictFloat, StrictFloat, StrictFloat]
 
     @model_validator(mode="after")
     def validate_box(self) -> DemoObjectResponse:
@@ -72,9 +86,9 @@ class DemoObjectResponse(APIModel):
 
 class DemoSegmentResponse(APIModel):
     label: str = Field(min_length=1)
-    category_id: int = Field(ge=0)
-    polygon: tuple[tuple[float, float], ...] = Field(min_length=3)
-    confidence: float = Field(ge=0.0, le=1.0)
+    category_id: StrictInt = Field(ge=0)
+    polygon: tuple[tuple[StrictFloat, StrictFloat], ...] = Field(min_length=3)
+    confidence: StrictFloat = Field(ge=0.0, le=1.0)
 
     @model_validator(mode="after")
     def validate_polygon(self) -> DemoSegmentResponse:
@@ -89,14 +103,14 @@ class DemoSegmentResponse(APIModel):
 
 class DemoFrameResponse(APIModel):
     id: str = Field(min_length=1)
-    frame_index: int = Field(ge=0)
-    timestamp_ms: int = Field(ge=0)
+    frame_index: StrictInt = Field(ge=0)
+    timestamp_ms: StrictInt = Field(ge=0)
     objects: tuple[DemoObjectResponse, ...]
     segments: tuple[DemoSegmentResponse, ...]
 
 
 class CategoryResponse(APIModel):
-    id: int = Field(ge=0)
+    id: StrictInt = Field(ge=0)
     label: str = Field(min_length=1)
     color: str = Field(pattern=r"^#[0-9a-fA-F]{6}$")
 
@@ -113,8 +127,8 @@ class DemoResponse(APIModel):
     schema_version: Literal["roadsense.demo/v1"]
     source: Literal["deterministic_geometric_fixture"]
     fixture_id: str = Field(min_length=1)
-    fps: float = Field(gt=0)
-    cadence_ms: int = Field(gt=0)
+    fps: StrictFloat = Field(gt=0)
+    cadence_ms: StrictInt = Field(gt=0)
     image_size: SizeResponse
     canvas: SizeResponse
     categories: tuple[CategoryResponse, ...]
@@ -171,7 +185,7 @@ class ReportResponse(APIModel):
     dataset_manifest_sha256: str | None = Field(default=None, pattern=SHA256.pattern)
     evaluation_authorized: bool
     frozen: bool
-    metrics: dict[str, float]
+    metrics: dict[str, StrictFloat]
     claim_boundary: str = Field(min_length=1)
     report_id: str = Field(pattern=r"^[0-9a-f]{16}$")
     details: dict[str, Any]
@@ -180,6 +194,11 @@ class ReportResponse(APIModel):
     @classmethod
     def flags_must_be_boolean(cls, value: object) -> bool:
         return validate_bool(value)
+
+    @field_validator("metrics", mode="before")
+    @classmethod
+    def metrics_must_be_strict_numbers(cls, value: object) -> dict[str, float]:
+        return _strict_metrics(value)
 
     @field_validator("metrics", "details", mode="after")
     @classmethod

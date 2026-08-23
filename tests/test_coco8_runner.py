@@ -18,6 +18,8 @@ from scripts.run_coco8_onnx_eval import (
     _decode_predictions,
     _letterbox,
     _load_truth,
+    _tree_inventory,
+    _validate_onnx_session,
 )
 
 
@@ -101,3 +103,128 @@ def test_decode_predictions_accepts_yolo_layout_and_class_aware_nms(transposed: 
 
     assert [item.category_id for item in detections] == [1, 2]
     assert [item.score for item in detections] == pytest.approx([0.95, 0.80])
+
+
+def test_decode_predictions_rejects_nonfinite_model_output() -> None:
+    values = _yolo_output(transposed=False)
+    values[0, 0, 0] = np.nan
+    with pytest.raises(ValueError, match="finite"):
+        _decode_predictions(
+            values,
+            scale=1.0,
+            pad_x=0,
+            pad_y=0,
+            width=640,
+            height=640,
+            score_threshold=0.5,
+            nms_iou=0.5,
+            max_detections=10,
+        )
+
+
+def test_decode_predictions_rejects_invalid_transform_and_scores() -> None:
+    values = _yolo_output(transposed=False)
+    with pytest.raises(ValueError, match="scale"):
+        _decode_predictions(
+            values,
+            scale=0.0,
+            pad_x=0,
+            pad_y=0,
+            width=640,
+            height=640,
+            score_threshold=0.5,
+            nms_iou=0.5,
+            max_detections=10,
+        )
+
+    values[0, 4 + 2, 0] = 1.1
+    with pytest.raises(ValueError, match="class scores"):
+        _decode_predictions(
+            values,
+            scale=1.0,
+            pad_x=0,
+            pad_y=0,
+            width=640,
+            height=640,
+            score_threshold=0.5,
+            nms_iou=0.5,
+            max_detections=10,
+        )
+
+
+def test_decode_predictions_rejects_invalid_padding_types() -> None:
+    values = _yolo_output(transposed=False)
+    with pytest.raises((TypeError, ValueError), match="pad_x"):
+        _decode_predictions(
+            values,
+            scale=1.0,
+            pad_x=-1,
+            pad_y=0,
+            width=640,
+            height=640,
+            score_threshold=0.5,
+            nms_iou=0.5,
+            max_detections=10,
+        )
+
+
+def test_tree_inventory_rejects_symlink_entries(tmp_path: Path) -> None:
+    outside = tmp_path.parent / f"{tmp_path.name}-outside.txt"
+    outside.write_text("outside", encoding="utf-8")
+    link = tmp_path / "link.txt"
+    try:
+        link.symlink_to(outside)
+    except (OSError, NotImplementedError) as exc:
+        pytest.skip(f"symlink creation unavailable: {exc}")
+    with pytest.raises(ValueError, match="symlink"):
+        _tree_inventory(tmp_path)
+
+
+def test_tree_inventory_can_exclude_generated_output_subtree(tmp_path: Path) -> None:
+    (tmp_path / "source.txt").write_text("source", encoding="utf-8")
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    (output_dir / "report.json").write_text("generated", encoding="utf-8")
+
+    inventory, _ = _tree_inventory(tmp_path, exclude=output_dir)
+
+    assert [item["path"] for item in inventory] == ["source.txt"]
+
+
+class _FakeMeta:
+    def __init__(self, name: str, tensor_type: str, shape: list[object]) -> None:
+        self.name = name
+        self.type = tensor_type
+        self.shape = shape
+
+
+class _FakeSession:
+    def __init__(self, inputs: list[_FakeMeta], outputs: list[_FakeMeta]) -> None:
+        self._inputs = inputs
+        self._outputs = outputs
+
+    def get_inputs(self) -> list[_FakeMeta]:
+        return self._inputs
+
+    def get_outputs(self) -> list[_FakeMeta]:
+        return self._outputs
+
+    def get_providers(self) -> list[str]:
+        return ["CPUExecutionProvider"]
+
+
+def test_validate_onnx_session_binds_graph_contract() -> None:
+    session = _FakeSession(
+        [_FakeMeta("images", "tensor(float)", ["batch", 3, "height", "width"])],
+        [_FakeMeta("output0", "tensor(float)", ["batch", 84, "anchors"])],
+    )
+    inputs, outputs = _validate_onnx_session(session)
+    assert inputs.name == "images"
+    assert outputs.name == "output0"
+
+    bad = _FakeSession(
+        [_FakeMeta("input", "tensor(float)", ["batch", 3, "height", "width"])],
+        [_FakeMeta("output0", "tensor(float)", ["batch", 84, "anchors"])],
+    )
+    with pytest.raises(ValueError, match="tensor names"):
+        _validate_onnx_session(bad)

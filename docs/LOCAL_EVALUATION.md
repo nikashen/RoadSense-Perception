@@ -109,6 +109,9 @@ Frame indices must be strictly increasing, timestamps cannot regress, and
 truth/prediction frame indices, timestamps, and image sizes must align.  A
 segmentation `.npy` file must be an integer array with shape
 `(frame_count, height, width)` and is loaded with `allow_pickle=False`.
+The raster height/width are the frozen segmentation coordinate space and may
+be lower-resolution than the frame's `image_size`; ground truth and
+predictions must use the same raster shape for every selected sequence.
 
 ## Running and interpreting a report
 

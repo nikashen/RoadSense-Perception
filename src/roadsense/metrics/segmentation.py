@@ -34,7 +34,7 @@ def evaluate_segmentation(
     if not 2 <= num_classes <= 10_000:
         raise ValueError("num_classes must be in [2, 10000]")
     # The protocol returns a dense matrix.  Bound its size before allocating
-    # ``num_classes²`` bins so an untrusted manifest cannot trigger a huge
+    # ``num_classes**2`` bins so an untrusted manifest cannot trigger a huge
     # memory allocation (4M int64 cells is approximately 32 MiB).
     if num_classes * num_classes > 4_000_000:
         raise ValueError("num_classes is too large for the dense confusion matrix")

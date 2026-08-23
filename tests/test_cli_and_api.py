@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from roadsense.api import create_app
-from roadsense.api.models import ReportResponse
+from roadsense.api.models import DemoResponse, ReportResponse
 from roadsense.cli import main
 
 
@@ -24,6 +24,13 @@ def test_cli_report_writes_evidence(tmp_path, capsys) -> None:
     assert output.is_file()
     assert json.loads(output.read_text(encoding="utf-8"))["evidence_level"] == "fixture"
     assert str(output.resolve()) in capsys.readouterr().out
+
+
+def test_cli_report_returns_error_for_unwritable_output(tmp_path, capsys) -> None:
+    output_dir = tmp_path / "already-a-directory"
+    output_dir.mkdir()
+    assert main(["report", "--output", str(output_dir)]) == 2
+    assert "report generation failed" in capsys.readouterr().err
 
 
 def test_cli_audits_fixture_manifest(capsys) -> None:
@@ -67,3 +74,35 @@ def test_api_report_rejects_inconsistent_evidence_flags() -> None:
     payload["dataset_manifest_sha256"] = "not-a-sha256"
     with pytest.raises(ValidationError, match="sha256"):
         ReportResponse.model_validate(payload)
+
+
+@pytest.mark.parametrize("value", ["0.5", True, None])
+def test_api_report_rejects_lossy_metric_coercion(value: object) -> None:
+    from roadsense.evidence import build_fixture_report
+
+    payload = build_fixture_report()
+    payload["metrics"] = {"detection_ap50": value}  # type: ignore[dict-item]
+    with pytest.raises(ValidationError, match="metrics"):
+        ReportResponse.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    ("path", "value"),
+    [
+        (("image_size", "width"), "640"),
+        (("frames", 0, "frame_index"), "0"),
+        (("frames", 0, "objects", 0, "confidence"), "0.9"),
+        (("frames", 0, "objects", 0, "track_id"), True),
+        (("fps",), "10"),
+    ],
+)
+def test_api_response_rejects_numeric_coercion(path: tuple[object, ...], value: object) -> None:
+    payload = create_app()
+    with TestClient(payload) as client:
+        demo = client.get("/api/v1/demo").json()
+    target: object = demo
+    for key in path[:-1]:
+        target = target[key]  # type: ignore[index]
+    target[path[-1]] = value  # type: ignore[index]
+    with pytest.raises(ValidationError):
+        DemoResponse.model_validate(demo)

@@ -4,6 +4,7 @@ __pycache__/
 *.pyd
 *.so
 .venv/
+.venv-ort/
 venv/
 *.egg-info/
 build/
@@ -25,15 +26,32 @@ reports/
 runs/
 logs/
 site/
+*.onnx
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.engine
+*.pkl
+*.pickle
 
 # Local browser/test captures
 .tmp/
 .playwright/
 test-results/
 
+# Credentials and local environment material
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+credentials*.json
+secrets*.json
+
 # Editors and operating systems
 .idea/
 .vscode/
 .DS_Store
 Thumbs.db
-

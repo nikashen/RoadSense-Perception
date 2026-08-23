@@ -210,11 +210,38 @@
         reason: "api_loaded",
       };
     } catch (error) {
-      return {
-        fixture: fallback,
-        source: "fallback",
-        reason: error instanceof Error ? error.message : "api_unavailable",
-      };
+      const apiReason = error instanceof Error ? error.message : "api_unavailable";
+      // A Pages build is often previewed from localhost with a static server.
+      // In that case the hostname looks like an API host, but there is no
+      // /api/v1/demo route. Try the versioned replay before using the emergency
+      // in-memory fixture so local static previews match GitHub Pages.
+      const pagesController = new AbortController();
+      const pagesTimeout = window.setTimeout(() => pagesController.abort(), 1200);
+      try {
+        const pagesResponse = await fetch(PAGES_PAYLOAD_PATH, {
+          headers: { Accept: "application/json" },
+          cache: "no-cache",
+          signal: pagesController.signal,
+        });
+        if (!pagesResponse.ok) {
+          throw new Error(`Pages payload returned ${pagesResponse.status}`);
+        }
+        return {
+          fixture: normalizeFixture(await pagesResponse.json()),
+          source: "pages",
+          reason: `api_unavailable: ${apiReason}; pages_payload`,
+        };
+      } catch (pagesError) {
+        const pagesReason =
+          pagesError instanceof Error ? pagesError.message : "pages_payload_unavailable";
+        return {
+          fixture: fallback,
+          source: "fallback",
+          reason: `api_unavailable: ${apiReason}; ${pagesReason}`,
+        };
+      } finally {
+        window.clearTimeout(pagesTimeout);
+      }
     } finally {
       window.clearTimeout(timeout);
     }
@@ -972,6 +999,7 @@
       button.type = "button";
       button.className = "frame-chip";
       button.dataset.frame = String(frame.index);
+      button.dataset.label = String(frame.index + 1).padStart(2, "0");
       button.textContent = String(frame.index + 1).padStart(2, "0");
       button.title = `Go to frame ${frame.index + 1}`;
       button.setAttribute("aria-label", `Go to frame ${frame.index + 1}`);

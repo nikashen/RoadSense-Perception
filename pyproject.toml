@@ -35,7 +35,7 @@ serve = [
 ]
 vision = [
   "pillow>=10,<13",
-  "onnxruntime>=1.18,<2",
+  "onnxruntime>=1.23,<2",
 ]
 dev = [
   "build>=1.2,<2",

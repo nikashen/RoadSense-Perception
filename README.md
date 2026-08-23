@@ -136,6 +136,9 @@ validation images and a hash-verified YOLO11n ONNX artifact, see
 [Real-data evaluation](docs/REAL_EVALUATION.md).  That receipt is explicitly
 development evidence on a tiny subset, not an official COCO benchmark or a
 production runtime claim.
+The tracked [sanitized aggregate receipt](docs/REAL_EVALUATION_RECEIPT.json)
+contains provenance and metrics only; raw images, labels, weights, and the
+full local report bundle remain excluded from source control.
 
 ## Verification
 
@@ -163,7 +166,8 @@ to complement ForgeSight-AD's industrial anomaly detection with ordinary
 object-level geometry, class masks, temporal association, and deployment
 contracts.
 
-Suggested resume bullets after the real-data milestone is authorized:
+Suggested resume bullets (the COCO8 smoke numbers below remain development
+evidence; an authorized benchmark needs a licensed, sequence-disjoint split):
 
 - Designed a sequence-aware perception pipeline covering detection,
   semantic segmentation, and multi-object tracking with separate metric
@@ -177,6 +181,9 @@ Suggested resume bullets after the real-data milestone is authorized:
 - Built a local-only, sequence-aware evaluation lane with hash-bound reports,
   plus a model-artifact manifest/verification receipt and framework-neutral
   adapter seam; authorized or frozen reports cannot omit model provenance.
+- Built a reproducible COCO8 + YOLO11n ONNX development runner with frozen
+  letterbox/post-processing settings and CPU runtime metadata; the four-image
+  compact AP@0.50 is recorded as evidence, not official COCO mAP.
 
 ## Boundaries
 

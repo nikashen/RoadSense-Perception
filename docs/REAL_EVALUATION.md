@@ -48,7 +48,10 @@ The original Anaconda-backed project environment had ONNX Runtime 1.18.1,
 which rejects the model's opset 22. Newer wheels also hit a Windows DLL
 initialisation failure in that Anaconda environment, so the isolated
 `.venv-ort` runtime is part of this receipt. It is not a new mandatory
-dependency of the core package.
+dependency of the core package. The package's optional `vision` extra therefore
+requires ONNX Runtime 1.23 or newer; older runtimes remain unsuitable for this
+YOLO11n artifact even though the framework-neutral artifact contract accepts
+other runtime versions for other models.
 
 ## Reproduction command
 
@@ -79,6 +82,12 @@ pixel `xyxy` contract, records an input/model verification receipt, and calls
 `roadsense evaluate-local`. It has no network code; downloading and license
 review happen before the command.
 
+The repository tracks a [sanitized aggregate receipt](REAL_EVALUATION_RECEIPT.json)
+with the same hashes, protocol settings, and metrics. It intentionally omits
+raw images, labels, model weights, absolute paths, per-detection predictions,
+and machine-specific timing; the complete JSON bundle remains local and
+ignored by Git.
+
 ## Frozen preprocessing and postprocessing settings
 
 - RGB conversion; aspect-preserving letterbox to 640 x 640.
@@ -108,10 +117,12 @@ produced:
 | false positives | 4 |
 | false negatives | 8 |
 
-The generated local report had the stable content-bound
-`report_id=fe72ada2ae5e638c` for the recorded `reports/coco8_real` receipt and
-bound the verified model artifact receipt. The separate `run_id` includes
-machine timing and may change on a rerun. Its evidence flags were:
+For the recorded `reports/coco8_real` layout, the generated local report had
+the content-bound `report_id=8163e7d374440aa2` and bound the verified model
+artifact receipt. Moving the output directory changes the relative model,
+spec, and dependency-lock paths included in the bound content and therefore
+produces a new report ID. The separate `run_id` includes machine timing and
+may change on a rerun. Its evidence flags were:
 
 ```text
 evidence_level=development

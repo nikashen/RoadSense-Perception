@@ -129,6 +129,42 @@ def test_manifest_rejects_unsafe_or_ambiguous_values(field: str, value: object, 
         ModelArtifactManifest.model_validate(payload)
 
 
+@pytest.mark.parametrize(
+    "path,value,match",
+    [
+        ("input", {"width": "640"}, "integer"),
+        ("preprocessing", {"scale": "0.5"}, "number"),
+        ("preprocessing", {"mean": ["0.5"], "std": [0.5]}, "number"),
+        ("runtime", {"opset": "17"}, "integer"),
+    ],
+)
+def test_manifest_rejects_lossy_numeric_coercions(
+    path: str, value: dict[str, object], match: str
+) -> None:
+    payload = _manifest_payload("a" * 64)
+    payload[path] = {**payload[path], **value}  # type: ignore[index]
+    with pytest.raises(ValidationError, match=match):
+        ModelArtifactManifest.model_validate(payload)
+
+
+@pytest.mark.parametrize("field", ["source", "license_id"])
+def test_manifest_rejects_non_string_text_fields(field: str) -> None:
+    payload = _manifest_payload("a" * 64)
+    payload[field] = b"value"
+    with pytest.raises(ValidationError, match="string"):
+        ModelArtifactManifest.model_validate(payload)
+
+
+def test_manifest_rejects_non_array_normalization_values() -> None:
+    payload = _manifest_payload("a" * 64)
+    payload["preprocessing"] = {
+        **payload["preprocessing"],  # type: ignore[index]
+        "mean": "0.5",
+    }
+    with pytest.raises(ValidationError, match="array"):
+        ModelArtifactManifest.model_validate(payload)
+
+
 def test_verify_artifact_hash_and_size(tmp_path: Path) -> None:
     artifact = tmp_path / "weights" / "model.onnx"
     artifact.parent.mkdir()

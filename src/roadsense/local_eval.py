@@ -49,6 +49,7 @@ SEQUENCE_BUNDLE_SCHEMA = "roadsense.sequence-bundle/v1"
 MAX_SEQUENCE_ID_LENGTH = 256
 MAX_MASK_ELEMENTS = 64_000_000
 MAX_MASK_FILE_BYTES = 512 * 1024 * 1024
+MAX_LOCK_FILE_BYTES = 16 * 1024 * 1024
 MAX_JSON_FILE_BYTES = 256 * 1024 * 1024
 
 
@@ -116,6 +117,8 @@ def _non_empty_string(value: object, name: str, *, max_length: int = 2_048) -> s
         raise LocalEvaluationError(f"{name} must be a non-empty string")
     if len(value) > max_length:
         raise LocalEvaluationError(f"{name} exceeds {max_length} characters")
+    if any(ord(character) < 32 or ord(character) == 127 for character in value):
+        raise LocalEvaluationError(f"{name} must not contain control characters")
     return value
 
 
@@ -190,6 +193,8 @@ def _resolve_local_directory(raw: object, *, base: Path, name: str) -> Path:
 
 def _sequence_id(value: object, name: str) -> str:
     text = _non_empty_string(value, name, max_length=MAX_SEQUENCE_ID_LENGTH)
+    if text != text.strip():
+        raise LocalEvaluationError(f"{name} must not have surrounding whitespace")
     if any(character in text for character in "\\/\r\n\x00"):
         raise LocalEvaluationError(f"{name} contains an invalid path/control character")
     return text
@@ -218,6 +223,8 @@ def _parse_split_sequences(value: object) -> Mapping[str, tuple[str, ...]]:
     all_ids: set[str] = set()
     for raw_split, raw_ids in mapping.items():
         split = _non_empty_string(raw_split, "split name", max_length=128)
+        if split != split.strip():
+            raise LocalEvaluationError("split name must not have surrounding whitespace")
         if not isinstance(raw_ids, list) or not raw_ids:
             raise LocalEvaluationError(f"split_sequences[{split!r}] must be a non-empty array")
         ids = tuple(_sequence_id(item, f"split_sequences[{split!r}][]") for item in raw_ids)
@@ -265,6 +272,8 @@ def load_local_spec(path: Path | str) -> LocalEvaluationSpec:
     if root.get("schema_version") != LOCAL_EVALUATION_SCHEMA:
         raise LocalEvaluationError(f"schema_version must be {LOCAL_EVALUATION_SCHEMA!r}")
     split = _non_empty_string(root.get("split"), "split", max_length=128)
+    if split != split.strip():
+        raise LocalEvaluationError("split must not have surrounding whitespace")
     split_sequences = _parse_split_sequences(root.get("split_sequences"))
     if split not in split_sequences:
         raise LocalEvaluationError(f"split {split!r} is missing from split_sequences")
@@ -479,6 +488,38 @@ def _sha256_file(path: Path) -> dict[str, object]:
     return {"sha256": digest.hexdigest(), "bytes": size}
 
 
+def _capture_file_hash(path: Path, *, role: str, max_bytes: int | None = None) -> dict[str, object]:
+    """Capture a local file hash with an operator-facing fail-closed error."""
+
+    try:
+        size = path.stat().st_size
+        if max_bytes is not None and size > max_bytes:
+            raise LocalEvaluationError(f"{role} exceeds the {max_bytes} byte safety limit")
+        return _sha256_file(path)
+    except LocalEvaluationError:
+        raise
+    except (OSError, TypeError, ValueError, MemoryError) as exc:
+        raise LocalEvaluationError(f"{role} cannot be hashed: {exc}") from exc
+
+
+def _assert_file_hash_unchanged(
+    path: Path,
+    expected: Mapping[str, object],
+    *,
+    role: str,
+    phase: str,
+    max_bytes: int | None = None,
+) -> None:
+    """Check a hash immediately after parsing/verification an input file."""
+
+    expected_sha = expected.get("sha256")
+    if not isinstance(expected_sha, str):
+        raise LocalEvaluationError(f"{role} hash record is malformed")
+    observed = _capture_file_hash(path, role=role, max_bytes=max_bytes)
+    if observed.get("sha256") != expected_sha:
+        raise LocalEvaluationError(f"{role} changed during {phase}; refusing to continue")
+
+
 def _load_bounded_json(path: Path, *, role: str) -> Any:
     try:
         size = path.stat().st_size
@@ -495,8 +536,34 @@ def _load_bounded_json(path: Path, *, role: str) -> Any:
 def load_local_evaluation(path: Path | str) -> LocalEvaluationCase:
     """Load all local inputs referenced by ``path`` and validate split alignment."""
 
-    spec = load_local_spec(path)
+    # Capture hashes before parsing each input and verify them immediately
+    # afterwards. Hashing only after parsing could bind metrics from one byte
+    # stream to a report that claims another if a file is replaced in between.
+    spec_path = Path(path).expanduser().resolve()
+    spec_hash = _capture_file_hash(
+        spec_path, role=f"evaluation spec {spec_path}", max_bytes=MAX_JSON_FILE_BYTES
+    )
+    spec = load_local_spec(spec_path)
+    _assert_file_hash_unchanged(
+        spec.spec_path,
+        spec_hash,
+        role="evaluation spec",
+        phase="parsing",
+        max_bytes=MAX_JSON_FILE_BYTES,
+    )
+    manifest_hash = _capture_file_hash(
+        spec.dataset_manifest_path,
+        role=f"dataset manifest {spec.dataset_manifest_path}",
+        max_bytes=MAX_JSON_FILE_BYTES,
+    )
     manifest, manifest_payload = _load_manifest(spec.dataset_manifest_path)
+    _assert_file_hash_unchanged(
+        spec.dataset_manifest_path,
+        manifest_hash,
+        role="dataset manifest",
+        phase="parsing",
+        max_bytes=MAX_JSON_FILE_BYTES,
+    )
     if spec.split not in manifest.splits:
         raise LocalEvaluationError(
             f"split {spec.split!r} is not declared by dataset manifest {manifest.dataset_name!r}"
@@ -507,6 +574,10 @@ def load_local_evaluation(path: Path | str) -> LocalEvaluationCase:
         raise LocalEvaluationError(f"evaluation tasks are absent from dataset manifest: {missing}")
     artifact_manifest: ModelArtifactManifest | None = None
     artifact_verification: ArtifactVerification | None = None
+    artifact_manifest_hash: Mapping[str, object] | None = None
+    artifact_hash_before: Mapping[str, object] | None = None
+    dependency_lock_path: Path | None = None
+    dependency_lock_hash_before: Mapping[str, object] | None = None
     if spec.artifact_manifest_path is not None or spec.artifact_root is not None:
         if spec.artifact_manifest_path is None or spec.artifact_root is None:
             # This is defensive (the spec parser currently requires both), but
@@ -514,11 +585,58 @@ def load_local_evaluation(path: Path | str) -> LocalEvaluationCase:
             raise LocalEvaluationError(
                 "model_artifact requires both a manifest path and an artifact root"
             )
+        artifact_manifest_hash = _capture_file_hash(
+            spec.artifact_manifest_path,
+            role=f"model artifact manifest {spec.artifact_manifest_path}",
+            max_bytes=MAX_JSON_FILE_BYTES,
+        )
         try:
             artifact_manifest = load_artifact_manifest(spec.artifact_manifest_path)
+            _assert_file_hash_unchanged(
+                spec.artifact_manifest_path,
+                artifact_manifest_hash,
+                role="model artifact manifest",
+                phase="parsing",
+                max_bytes=MAX_JSON_FILE_BYTES,
+            )
+            artifact_path = artifact_manifest.resolve_artifact_path(spec.artifact_root)
+            artifact_hash_before = _capture_file_hash(
+                artifact_path, role="model artifact checkpoint"
+            )
+            dependency_lock_path = artifact_manifest.resolve_dependency_lock_path(
+                spec.artifact_root
+            )
+            if dependency_lock_path is not None:
+                dependency_lock_hash_before = _capture_file_hash(
+                    dependency_lock_path,
+                    role="model dependency lock",
+                    max_bytes=MAX_LOCK_FILE_BYTES,
+                )
             artifact_verification = verify_artifact_manifest(
                 artifact_manifest, artifact_root=spec.artifact_root
             )
+            _assert_file_hash_unchanged(
+                artifact_path,
+                artifact_hash_before,
+                role="model artifact checkpoint",
+                phase="verification",
+            )
+            if dependency_lock_path is not None:
+                if dependency_lock_hash_before is None:
+                    raise LocalEvaluationError("model dependency lock hash record is missing")
+                _assert_file_hash_unchanged(
+                    dependency_lock_path,
+                    dependency_lock_hash_before,
+                    role="model dependency lock",
+                    phase="verification",
+                    max_bytes=MAX_LOCK_FILE_BYTES,
+                )
+                expected_lock_hash = artifact_verification.dependency_lock_sha256
+                observed_lock_hash = dependency_lock_hash_before.get("sha256")
+                if expected_lock_hash != observed_lock_hash:
+                    raise LocalEvaluationError(
+                        "model dependency lock hash does not match the verified receipt"
+                    )
         except (ArtifactVerificationError, OSError, TypeError, ValueError) as exc:
             raise LocalEvaluationError(f"model artifact verification failed: {exc}") from exc
         missing_artifact_tasks = [
@@ -533,9 +651,36 @@ def load_local_evaluation(path: Path | str) -> LocalEvaluationCase:
         raise LocalEvaluationError(
             "authorized or frozen evaluation requires a verified model_artifact block"
         )
-    selected_ids = tuple(spec.split_sequences[spec.split])
+    # Sequence order is not a semantic input to detection/segmentation/
+    # tracking metrics.  Canonicalize it so equal-score ties, track namespaces,
+    # concatenated masks, and report details do not depend on JSON list order.
+    selected_ids = tuple(sorted(spec.split_sequences[spec.split]))
+    ground_truth_hash = _capture_file_hash(
+        spec.ground_truth_path,
+        role=f"ground_truth bundle {spec.ground_truth_path}",
+        max_bytes=MAX_JSON_FILE_BYTES,
+    )
     truth = _load_sequence_bundle(spec.ground_truth_path, role="ground_truth")
+    _assert_file_hash_unchanged(
+        spec.ground_truth_path,
+        ground_truth_hash,
+        role="ground_truth bundle",
+        phase="parsing",
+        max_bytes=MAX_JSON_FILE_BYTES,
+    )
+    predictions_hash = _capture_file_hash(
+        spec.predictions_path,
+        role=f"predictions bundle {spec.predictions_path}",
+        max_bytes=MAX_JSON_FILE_BYTES,
+    )
     predictions = _load_sequence_bundle(spec.predictions_path, role="predictions")
+    _assert_file_hash_unchanged(
+        spec.predictions_path,
+        predictions_hash,
+        role="predictions bundle",
+        phase="parsing",
+        max_bytes=MAX_JSON_FILE_BYTES,
+    )
     expected = set(selected_ids)
     if set(truth) != expected or set(predictions) != expected:
         raise LocalEvaluationError(
@@ -591,13 +736,34 @@ def load_local_evaluation(path: Path | str) -> LocalEvaluationCase:
 
     truth_masks: dict[str, NDArray[np.integer[Any]]] = {}
     prediction_masks: dict[str, NDArray[np.integer[Any]]] = {}
+    segmentation_truth_hashes: dict[str, Mapping[str, object]] = {}
+    segmentation_prediction_hashes: dict[str, Mapping[str, object]] = {}
     if TaskKind.SEGMENTATION in spec.tasks:
         for sequence_id in selected_ids:
+            truth_frames = truth[sequence_id]
+            truth_mask_hash = _capture_file_hash(
+                spec.segmentation_truth_paths[sequence_id],
+                role=f"ground-truth mask for sequence {sequence_id!r}",
+                max_bytes=MAX_MASK_FILE_BYTES,
+            )
             truth_masks[sequence_id] = _load_mask(
                 spec.segmentation_truth_paths[sequence_id],
                 role="ground_truth",
                 sequence_id=sequence_id,
-                frame_count=len(truth[sequence_id]),
+                frame_count=len(truth_frames),
+            )
+            _assert_file_hash_unchanged(
+                spec.segmentation_truth_paths[sequence_id],
+                truth_mask_hash,
+                role=f"ground-truth mask for sequence {sequence_id!r}",
+                phase="parsing",
+                max_bytes=MAX_MASK_FILE_BYTES,
+            )
+            segmentation_truth_hashes[sequence_id] = truth_mask_hash
+            prediction_mask_hash = _capture_file_hash(
+                spec.segmentation_prediction_paths[sequence_id],
+                role=f"prediction mask for sequence {sequence_id!r}",
+                max_bytes=MAX_MASK_FILE_BYTES,
             )
             prediction_masks[sequence_id] = _load_mask(
                 spec.segmentation_prediction_paths[sequence_id],
@@ -605,30 +771,38 @@ def load_local_evaluation(path: Path | str) -> LocalEvaluationCase:
                 sequence_id=sequence_id,
                 frame_count=len(predictions[sequence_id]),
             )
+            _assert_file_hash_unchanged(
+                spec.segmentation_prediction_paths[sequence_id],
+                prediction_mask_hash,
+                role=f"prediction mask for sequence {sequence_id!r}",
+                phase="parsing",
+                max_bytes=MAX_MASK_FILE_BYTES,
+            )
+            segmentation_prediction_hashes[sequence_id] = prediction_mask_hash
             if truth_masks[sequence_id].shape[1:] != prediction_masks[sequence_id].shape[1:]:
                 raise LocalEvaluationError(
                     f"sequence {sequence_id!r} segmentation mask shapes do not match"
                 )
 
     input_hashes: dict[str, Mapping[str, object]] = {
-        "spec": _sha256_file(spec.spec_path),
-        "dataset_manifest": _sha256_file(spec.dataset_manifest_path),
-        "ground_truth": _sha256_file(spec.ground_truth_path),
-        "predictions": _sha256_file(spec.predictions_path),
+        "spec": spec_hash,
+        "dataset_manifest": manifest_hash,
+        "ground_truth": ground_truth_hash,
+        "predictions": predictions_hash,
     }
     if spec.artifact_manifest_path is not None:
-        input_hashes["model_artifact_manifest"] = _sha256_file(spec.artifact_manifest_path)
+        if artifact_manifest_hash is None:
+            raise LocalEvaluationError("model artifact manifest hash record is missing")
+        input_hashes["model_artifact_manifest"] = artifact_manifest_hash
     if artifact_verification is not None:
         input_hashes["model_artifact_receipt"] = artifact_verification.model_dump(mode="json")
+        if dependency_lock_path is not None:
+            if dependency_lock_hash_before is None:
+                raise LocalEvaluationError("model dependency lock hash record is missing")
+            input_hashes["model_dependency_lock"] = dependency_lock_hash_before
     if TaskKind.SEGMENTATION in spec.tasks:
-        input_hashes["segmentation_ground_truth"] = {
-            sequence_id: _sha256_file(spec.segmentation_truth_paths[sequence_id])
-            for sequence_id in selected_ids
-        }
-        input_hashes["segmentation_predictions"] = {
-            sequence_id: _sha256_file(spec.segmentation_prediction_paths[sequence_id])
-            for sequence_id in selected_ids
-        }
+        input_hashes["segmentation_ground_truth"] = segmentation_truth_hashes
+        input_hashes["segmentation_predictions"] = segmentation_prediction_hashes
     return LocalEvaluationCase(
         spec=spec,
         dataset_manifest=manifest,
@@ -770,16 +944,178 @@ def _flatten_metrics(reports: Mapping[str, Mapping[str, object]]) -> dict[str, f
     return flattened
 
 
-def evaluate_local(path: Path | str) -> dict[str, object]:
+def _assert_input_hashes_stable(case: LocalEvaluationCase) -> None:
+    """Reject files replaced while a local evaluation was running.
+
+    Parsing and metric evaluation happen over local inputs that may be changed
+    by another process.  A post-hoc report must not bind hashes for bytes other
+    than the bytes that were read, so every hashed input is checked again just
+    before the report is emitted.  The checkpoint itself is included when a
+    verified artifact receipt is present.
+    """
+
+    checks: list[tuple[str, Path, str, int | None]] = []
+
+    def add_check(
+        name: str,
+        path: Path,
+        record: Mapping[str, object],
+        *,
+        max_bytes: int | None = None,
+    ) -> None:
+        expected = record.get("sha256")
+        if not isinstance(expected, str):
+            raise LocalEvaluationError(f"input hash record for {name} is malformed")
+        checks.append((name, path, expected, max_bytes))
+
+    add_check(
+        "spec",
+        case.spec.spec_path,
+        case.input_hashes["spec"],
+        max_bytes=MAX_JSON_FILE_BYTES,
+    )
+    add_check(
+        "dataset_manifest",
+        case.spec.dataset_manifest_path,
+        case.input_hashes["dataset_manifest"],
+        max_bytes=MAX_JSON_FILE_BYTES,
+    )
+    add_check(
+        "ground_truth",
+        case.spec.ground_truth_path,
+        case.input_hashes["ground_truth"],
+        max_bytes=MAX_JSON_FILE_BYTES,
+    )
+    add_check(
+        "predictions",
+        case.spec.predictions_path,
+        case.input_hashes["predictions"],
+        max_bytes=MAX_JSON_FILE_BYTES,
+    )
+    if case.spec.artifact_manifest_path is not None:
+        artifact_record = case.input_hashes.get("model_artifact_manifest")
+        if not isinstance(artifact_record, Mapping):
+            raise LocalEvaluationError("model artifact manifest hash record is missing")
+        add_check(
+            "model_artifact_manifest",
+            case.spec.artifact_manifest_path,
+            artifact_record,
+            max_bytes=MAX_JSON_FILE_BYTES,
+        )
+    if case.artifact_manifest is not None and case.artifact_verification is not None:
+        if case.spec.artifact_root is None:
+            raise LocalEvaluationError("verified model artifact root is missing")
+        try:
+            dependency_lock_path = case.artifact_manifest.resolve_dependency_lock_path(
+                case.spec.artifact_root
+            )
+        except ArtifactVerificationError as exc:
+            raise LocalEvaluationError(f"model dependency lock cannot be resolved: {exc}") from exc
+        if dependency_lock_path is not None:
+            lock_record = case.input_hashes.get("model_dependency_lock")
+            if not isinstance(lock_record, Mapping):
+                raise LocalEvaluationError("model dependency lock hash record is missing")
+            add_check(
+                "model dependency lock",
+                dependency_lock_path,
+                lock_record,
+                max_bytes=MAX_LOCK_FILE_BYTES,
+            )
+            expected_lock_hash = case.artifact_verification.dependency_lock_sha256
+            observed_lock_hash = lock_record.get("sha256")
+            if expected_lock_hash != observed_lock_hash:
+                raise LocalEvaluationError(
+                    "model dependency lock hash does not match the verified receipt"
+                )
+    for name, paths in (
+        ("segmentation_ground_truth", case.spec.segmentation_truth_paths),
+        ("segmentation_predictions", case.spec.segmentation_prediction_paths),
+    ):
+        records = case.input_hashes.get(name)
+        if not isinstance(records, Mapping):
+            if paths:
+                raise LocalEvaluationError(f"{name} hash records are missing")
+            continue
+        for sequence_id, path in paths.items():
+            sequence_record = records.get(sequence_id)
+            if not isinstance(sequence_record, Mapping):
+                raise LocalEvaluationError(f"{name} hash record is missing for {sequence_id!r}")
+            add_check(
+                f"{name}[{sequence_id}]",
+                path,
+                sequence_record,
+                max_bytes=MAX_MASK_FILE_BYTES,
+            )
+
+    for name, path, expected, max_bytes in checks:
+        try:
+            observed = _capture_file_hash(path, role=f"input {name}", max_bytes=max_bytes)["sha256"]
+        except LocalEvaluationError as exc:
+            raise LocalEvaluationError(f"input {name} cannot be rehashed: {exc}") from exc
+        if observed != expected:
+            raise LocalEvaluationError(
+                f"input {name} changed during evaluation; refusing to emit a mixed-content report"
+            )
+
+    if case.artifact_manifest is not None and case.artifact_verification is not None:
+        if case.spec.artifact_root is None:
+            raise LocalEvaluationError("verified model artifact root is missing")
+        try:
+            artifact_path = case.artifact_manifest.resolve_artifact_path(case.spec.artifact_root)
+            observed_artifact = _capture_file_hash(artifact_path, role="model artifact")["sha256"]
+        except (ArtifactVerificationError, LocalEvaluationError) as exc:
+            raise LocalEvaluationError(f"model artifact cannot be rehashed: {exc}") from exc
+        if observed_artifact != case.artifact_verification.artifact_sha256:
+            raise LocalEvaluationError(
+                "model artifact changed during evaluation; refusing to emit a report"
+            )
+
+
+def _assert_output_path_safe(case: LocalEvaluationCase, output_path: Path | str) -> None:
+    """Prevent a report writer from replacing one of its own input files."""
+
+    output = Path(output_path).expanduser().resolve()
+    input_paths: set[Path] = {
+        case.spec.spec_path,
+        case.spec.dataset_manifest_path,
+        case.spec.ground_truth_path,
+        case.spec.predictions_path,
+    }
+    if case.spec.artifact_manifest_path is not None:
+        input_paths.add(case.spec.artifact_manifest_path)
+    input_paths.update(case.spec.segmentation_truth_paths.values())
+    input_paths.update(case.spec.segmentation_prediction_paths.values())
+    if case.artifact_manifest is not None and case.spec.artifact_root is not None:
+        try:
+            input_paths.add(case.artifact_manifest.resolve_artifact_path(case.spec.artifact_root))
+            dependency_lock = case.artifact_manifest.resolve_dependency_lock_path(
+                case.spec.artifact_root
+            )
+        except ArtifactVerificationError as exc:
+            raise LocalEvaluationError(f"model artifact input cannot be resolved: {exc}") from exc
+        if dependency_lock is not None:
+            input_paths.add(dependency_lock)
+    if output in input_paths:
+        raise LocalEvaluationError(
+            "output path must not overwrite an input file; choose a separate report file"
+        )
+
+
+def evaluate_local(path: Path | str, *, output_path: Path | str | None = None) -> dict[str, object]:
     """Evaluate a validated local spec and return a hash-bound report.
 
     The returned report uses ``development`` evidence unless the dataset
     manifest explicitly marks a run as authorized and frozen.  It never
-    upgrades fixture or missing-data inputs to benchmark evidence.
+    upgrades fixture or missing-data inputs to benchmark evidence.  When an
+    output path is supplied, it is checked against every referenced input
+    before metric evaluation so a CLI writer cannot replace its own evidence
+    source.
     """
 
     case = load_local_evaluation(path)
-    selected_ids = tuple(case.spec.split_sequences[case.spec.split])
+    if output_path is not None:
+        _assert_output_path_safe(case, output_path)
+    selected_ids = tuple(sorted(case.spec.split_sequences[case.spec.split]))
     track_namespace = (
         _build_track_namespace(case.truth_sequences, case.prediction_sequences, selected_ids)
         if TaskKind.TRACKING in case.spec.tasks
@@ -849,6 +1185,7 @@ def evaluate_local(path: Path | str) -> dict[str, object]:
     except (TypeError, ValueError, MemoryError) as exc:
         raise LocalEvaluationError(f"aggregate metric evaluation failed: {exc}") from exc
 
+    _assert_input_hashes_stable(case)
     metrics = _flatten_metrics(aggregate_reports)
     manifest_sha = canonical_sha256(dict(case.manifest_payload))
     evidence_level = (
@@ -923,6 +1260,11 @@ def _concat_masks(
     shapes = {masks[sequence_id].shape[1:] for sequence_id in ordered_ids}
     if len(shapes) != 1:
         raise LocalEvaluationError("all segmentation masks in a split must share height/width")
+    total_elements = sum(int(masks[sequence_id].size) for sequence_id in ordered_ids)
+    if total_elements > MAX_MASK_ELEMENTS:
+        raise LocalEvaluationError(
+            f"aggregate segmentation masks exceed the {MAX_MASK_ELEMENTS} element safety limit"
+        )
     return cast(
         NDArray[np.integer[Any]], np.concatenate([masks[key] for key in ordered_ids], axis=0)
     )

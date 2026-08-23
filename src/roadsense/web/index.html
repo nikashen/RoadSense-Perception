@@ -281,9 +281,10 @@
             <p class="section-kicker">DEMO MANIFEST</p>
             <h2>Deterministic render contract</h2>
             <p>
-              Localhost mode loads <code>/api/v1/demo</code> and validates its evidence flags.
-              GitHub Pages loads the versioned <code>demo.json</code> replay; if that payload is
-              unavailable, the client marks the built-in fallback instead of hiding the failure.
+              Localhost mode first loads <code>/api/v1/demo</code> and validates its evidence flags;
+              if no API is running, it tries the versioned <code>demo.json</code> replay before the
+              emergency in-memory fallback. GitHub Pages uses the same replay path and marks the
+              fallback explicitly instead of hiding a failed load.
             </p>
             <dl class="manifest-list">
               <div><dt>Fixture ID</dt><dd id="manifest-id">—</dd></div>
