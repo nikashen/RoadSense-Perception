@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
 import pytest
 from pydantic import ValidationError
 
@@ -59,6 +60,76 @@ def test_detection_rejects_non_finite_score() -> None:
             score=math.nan,
             bbox=BoxXYXY(x_min=1, y_min=1, x_max=2, y_max=2),
         )
+
+
+@pytest.mark.parametrize("value", [True, "10", 10.0])
+def test_image_size_rejects_integer_coercion(value: object) -> None:
+    with pytest.raises(ValidationError, match="integer"):
+        ImageSize(width=value, height=10)
+
+
+@pytest.mark.parametrize("value", [True, "0.5"])
+def test_box_rejects_numeric_coercion(value: object) -> None:
+    with pytest.raises(ValidationError, match="number"):
+        BoxXYXY(x_min=value, y_min=0, x_max=1, y_max=1)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("category_id", True),
+        ("category_id", "1"),
+        ("score", True),
+        ("score", "0.5"),
+        ("track_id", True),
+        ("track_id", "7"),
+    ],
+)
+def test_detection_rejects_numeric_coercion(field: str, value: object) -> None:
+    payload: dict[str, object] = {
+        "category_id": 1,
+        "score": 0.5,
+        "bbox": {"x_min": 0, "y_min": 0, "x_max": 1, "y_max": 1},
+    }
+    payload[field] = value
+    with pytest.raises(ValidationError, match="(integer|number)"):
+        Detection.model_validate(payload)
+
+
+@pytest.mark.parametrize("field", ["frame_index", "timestamp_ms"])
+def test_frame_rejects_temporal_numeric_coercion(field: str) -> None:
+    payload: dict[str, object] = {
+        "frame_index": 0,
+        "timestamp_ms": 0,
+        "image_size": {"width": 10, "height": 10},
+        "detections": [],
+    }
+    payload[field] = "0"
+    with pytest.raises(ValidationError, match="integer"):
+        FrameRecord.model_validate(payload)
+
+
+def test_numeric_contracts_accept_numpy_scalars() -> None:
+    frame = FrameRecord(
+        frame_index=np.int64(0),
+        timestamp_ms=np.uint32(0),
+        image_size=ImageSize(width=np.int32(10), height=np.int32(10)),
+        detections=(
+            Detection(
+                category_id=np.int64(1),
+                score=np.float32(0.5),
+                track_id=np.uint32(3),
+                bbox=BoxXYXY(
+                    x_min=np.float32(0),
+                    y_min=np.float64(0),
+                    x_max=np.float32(1),
+                    y_max=np.float64(1),
+                ),
+            ),
+        ),
+    )
+    assert frame.frame_index == 0
+    assert frame.detections[0].track_id == 3
 
 
 def _manifest_payload() -> dict[str, object]:

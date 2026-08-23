@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import operator
-from typing import SupportsIndex, cast
+from typing import Any, SupportsIndex, cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -19,8 +19,8 @@ def _integer_parameter(value: object, name: str) -> int:
 
 
 def evaluate_segmentation(
-    ground_truth: NDArray[np.integer],
-    predictions: NDArray[np.integer],
+    ground_truth: NDArray[np.integer[Any]],
+    predictions: NDArray[np.integer[Any]],
     *,
     num_classes: int,
     ignore_index: int = 255,

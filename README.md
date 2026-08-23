@@ -131,6 +131,12 @@ dry-run command.  A development report may omit model provenance for
 exploration; an authorized or frozen report must include a locally verified
 `model_artifact` manifest/root pair.
 
+For a fully reproducible, operator-run smoke receipt using four real COCO8
+validation images and a hash-verified YOLO11n ONNX artifact, see
+[Real-data evaluation](docs/REAL_EVALUATION.md).  That receipt is explicitly
+development evidence on a tiny subset, not an official COCO benchmark or a
+production runtime claim.
+
 ## Verification
 
 ```powershell

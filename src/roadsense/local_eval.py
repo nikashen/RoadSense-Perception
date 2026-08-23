@@ -92,8 +92,8 @@ class LocalEvaluationCase:
     manifest_payload: Mapping[str, Any]
     truth_sequences: Mapping[str, tuple[FrameRecord, ...]]
     prediction_sequences: Mapping[str, tuple[FrameRecord, ...]]
-    truth_masks: Mapping[str, NDArray[np.integer]]
-    prediction_masks: Mapping[str, NDArray[np.integer]]
+    truth_masks: Mapping[str, NDArray[np.integer[Any]]]
+    prediction_masks: Mapping[str, NDArray[np.integer[Any]]]
     input_hashes: Mapping[str, Mapping[str, object]]
     artifact_manifest: ModelArtifactManifest | None
     artifact_verification: ArtifactVerification | None
@@ -423,7 +423,9 @@ def _load_sequence_bundle(path: Path, *, role: str) -> Mapping[str, tuple[FrameR
     return result
 
 
-def _load_mask(path: Path, *, role: str, sequence_id: str, frame_count: int) -> NDArray[np.integer]:
+def _load_mask(
+    path: Path, *, role: str, sequence_id: str, frame_count: int
+) -> NDArray[np.integer[Any]]:
     if path.suffix.lower() != ".npy":
         raise LocalEvaluationError(
             f"{role} mask for sequence {sequence_id!r} must be a .npy array "
@@ -464,7 +466,7 @@ def _load_mask(path: Path, *, role: str, sequence_id: str, frame_count: int) -> 
         raise LocalEvaluationError(
             f"{role} mask for sequence {sequence_id!r} must use an integer dtype"
         )
-    return cast(NDArray[np.integer], array)
+    return cast(NDArray[np.integer[Any]], array)
 
 
 def _sha256_file(path: Path) -> dict[str, object]:
@@ -587,8 +589,8 @@ def load_local_evaluation(path: Path | str) -> LocalEvaluationCase:
                     + ", ".join(str(item) for item in unknown_ids)
                 )
 
-    truth_masks: dict[str, NDArray[np.integer]] = {}
-    prediction_masks: dict[str, NDArray[np.integer]] = {}
+    truth_masks: dict[str, NDArray[np.integer[Any]]] = {}
+    prediction_masks: dict[str, NDArray[np.integer[Any]]] = {}
     if TaskKind.SEGMENTATION in spec.tasks:
         for sequence_id in selected_ids:
             truth_masks[sequence_id] = _load_mask(
@@ -914,14 +916,16 @@ def evaluate_local(path: Path | str) -> dict[str, object]:
 
 
 def _concat_masks(
-    masks: Mapping[str, NDArray[np.integer]], ordered_ids: Sequence[str]
-) -> NDArray[np.integer]:
+    masks: Mapping[str, NDArray[np.integer[Any]]], ordered_ids: Sequence[str]
+) -> NDArray[np.integer[Any]]:
     if not ordered_ids:
         raise LocalEvaluationError("at least one sequence is required for segmentation")
     shapes = {masks[sequence_id].shape[1:] for sequence_id in ordered_ids}
     if len(shapes) != 1:
         raise LocalEvaluationError("all segmentation masks in a split must share height/width")
-    return cast(NDArray[np.integer], np.concatenate([masks[key] for key in ordered_ids], axis=0))
+    return cast(
+        NDArray[np.integer[Any]], np.concatenate([masks[key] for key in ordered_ids], axis=0)
+    )
 
 
 def fixture_dry_run_summary() -> dict[str, object]:
