@@ -7,6 +7,18 @@ from roadsense.fixture import build_fixture_bundle, build_fixture_metrics
 from roadsense.json_io import canonical_sha256
 
 
+def compute_report_id(payload: dict[str, object]) -> str:
+    """Return the short canonical identity for a complete report payload.
+
+    ``report_id`` is excluded so the identifier can be recomputed during API
+    validation. Every other public field, including the detailed metric
+    diagnostics, is bound by the digest.
+    """
+
+    material = {key: value for key, value in payload.items() if key != "report_id"}
+    return canonical_sha256(material)[:16]
+
+
 def build_fixture_report() -> dict[str, object]:
     bundle = build_fixture_bundle()
     metrics = build_fixture_metrics(bundle)
@@ -33,8 +45,8 @@ def build_fixture_report() -> dict[str, object]:
             "No public-dataset quality, runtime, robustness, or production claim is authorized."
         ),
     ).model_dump(mode="json")
-    report["report_id"] = canonical_sha256(report)[:16]
     report["details"] = metrics
+    report["report_id"] = compute_report_id(report)
     return report
 
 

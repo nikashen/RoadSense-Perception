@@ -6,32 +6,63 @@ import argparse
 import hashlib
 import json
 import shutil
+import sys
 from pathlib import Path
 
 
 def build(output: Path) -> Path:
     root = Path(__file__).resolve().parents[1]
     source = root / "src" / "roadsense" / "web"
-    required = ("index.html", "app.js", "styles.css", "favicon.svg")
-    if any(not (source / name).is_file() for name in required):
+    static_assets = ("index.html", "app.js", "styles.css", "favicon.svg")
+    if any(not (source / name).is_file() for name in static_assets):
         raise FileNotFoundError("web assets are incomplete")
     output = output.resolve()
     pages_root = (root / "dist").resolve()
     if output == pages_root or pages_root not in output.parents:
         raise ValueError("Pages output must be a child of repository dist/")
-    if output.exists():
-        shutil.rmtree(output)
-    output.mkdir(parents=True)
-    for name in required:
-        shutil.copy2(source / name, output / name)
-    (output / ".nojekyll").write_text("", encoding="ascii")
-    assets = list(required) + [".nojekyll"]
-    asset_hashes = {
-        name: hashlib.sha256((output / name).read_bytes()).hexdigest() for name in assets
-    }
+
+    # Build and validate the generated payload before touching an existing
+    # artifact. A missing dependency or stale manifest must not destroy the
+    # last known-good Pages directory.
+    source_root = str(root / "src")
+    if source_root not in sys.path:
+        sys.path.insert(0, source_root)
+    try:
+        from roadsense.fixture import build_demo_payload
+        from roadsense.json_io import canonical_sha256
+    except ImportError as exc:
+        raise RuntimeError("building Pages requires the project runtime dependencies") from exc
+
+    payload = build_demo_payload()
+    payload_hash = canonical_sha256(payload)
     fixture_manifest = json.loads(
         (root / "configs" / "fixture_manifest.json").read_text(encoding="utf-8")
     )
+    if fixture_manifest.get("content_sha256") != payload_hash:
+        raise ValueError("fixture manifest hash does not match the generated demo payload")
+
+    if output.exists():
+        try:
+            shutil.rmtree(output)
+        except OSError as exc:
+            raise RuntimeError(
+                "Pages output cannot be replaced; stop the local static server or choose another dist/ path"
+            ) from exc
+    output.mkdir(parents=True)
+    for name in static_assets:
+        shutil.copy2(source / name, output / name)
+    # Generate a Pages replay from the exact same payload served by the local
+    # API. This prevents the public artifact from drifting into a second,
+    # undocumented fixture schema.
+    (output / "demo.json").write_text(
+        json.dumps(payload, ensure_ascii=False, allow_nan=False, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    (output / ".nojekyll").write_text("", encoding="ascii")
+    assets = list(static_assets) + ["demo.json", ".nojekyll"]
+    asset_hashes = {
+        name: hashlib.sha256((output / name).read_bytes()).hexdigest() for name in assets
+    }
     manifest = {
         "schema_version": "roadsense.pages/v1",
         "runtime": "deterministic_geometric_fixture",
@@ -40,11 +71,11 @@ def build(output: Path) -> Path:
         "frozen": False,
         "benchmark_claim_available": False,
         "fixture": {
-            "fixture_id": "roadsense-city-loop-v1",
-            "frame_count": 24,
-            "canvas": {"width": 960, "height": 540},
-            "cadence_ms": 100,
-            "payload_sha256": fixture_manifest["content_sha256"],
+            "fixture_id": payload["fixture_id"],
+            "frame_count": len(payload["frames"]),
+            "canvas": payload["canvas"],
+            "cadence_ms": payload["cadence_ms"],
+            "payload_sha256": payload_hash,
         },
         "assets": assets,
         "asset_sha256": asset_hashes,

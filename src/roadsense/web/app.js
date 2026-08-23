@@ -2,6 +2,7 @@
   "use strict";
 
   const API_PATH = "/api/v1/demo";
+  const PAGES_PAYLOAD_PATH = "demo.json";
   const WIDTH = 960;
   const HEIGHT = 540;
   const FIXTURE_CADENCE_MS = 100;
@@ -20,6 +21,7 @@
   const state = {
     fixture: null,
     source: "loading",
+    sourceReason: "",
     currentFrame: 0,
     playing: false,
     timer: null,
@@ -44,21 +46,42 @@
     const requestedView = window.location.hash === "#evidence" ? "evidence" : "lab";
     setView(requestedView, false);
 
-    const loaded = await loadFixture();
-    state.fixture = loaded.fixture;
-    state.source = loaded.source;
-    state.currentFrame = 0;
-    state.selectedTrack = firstVisibleDetection()?.trackId ?? null;
+    try {
+      const loaded = await loadFixture();
+      state.fixture = loaded.fixture;
+      state.source = loaded.source;
+      state.sourceReason = loaded.reason ?? "";
+      state.currentFrame = 0;
+      state.selectedTrack = firstVisibleDetection()?.trackId ?? null;
 
-    buildFrameStrip();
-    updateSourceStatus();
-    updateManifest();
-    render();
-    elements.canvasLoading.classList.add("is-hidden");
+      buildFrameStrip();
+      updateSourceStatus();
+      updateManifest();
+      render();
+      elements.copyManifest.disabled = false;
+    } catch (error) {
+      // Keep the page usable even if a future fixture builder or a browser API
+      // fails before the fetch fallback is available. The visible status makes
+      // this degraded path explicit instead of leaving a permanent spinner.
+      state.fixture = buildBuiltinFixture();
+      state.source = "fallback";
+      state.sourceReason = error instanceof Error ? error.message : "initialization error";
+      state.currentFrame = 0;
+      state.selectedTrack = firstVisibleDetection()?.trackId ?? null;
+      buildFrameStrip();
+      updateSourceStatus();
+      updateManifest();
+      render();
+      elements.copyManifest.disabled = false;
+    } finally {
+      elements.canvasLoading.classList.add("is-hidden");
+      elements.canvasShell?.setAttribute("aria-busy", "false");
+    }
   }
 
   function cacheElements() {
     elements.canvas = document.querySelector("#scene-canvas");
+    elements.canvasShell = document.querySelector("#canvas-shell");
     elements.canvasLoading = document.querySelector("#canvas-loading");
     elements.sourceLabel = document.querySelector("#data-source-label");
     elements.headerStatus = document.querySelector(".header-status");
@@ -86,6 +109,9 @@
     elements.objectList = document.querySelector("#object-list");
     elements.objectDetail = document.querySelector("#object-detail");
     elements.copyManifest = document.querySelector("#copy-manifest");
+    elements.manifestEvidence = document.querySelector("#manifest-evidence");
+    elements.manifestAuthorization = document.querySelector("#manifest-authorization");
+    elements.manifestBenchmark = document.querySelector("#manifest-benchmark");
   }
 
   function bindEvents() {
@@ -137,7 +163,31 @@
   async function loadFixture() {
     const fallback = buildBuiltinFixture();
     if (!isLocalApiHost()) {
-      return { fixture: fallback, source: "builtin" };
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 1200);
+      try {
+        const response = await fetch(PAGES_PAYLOAD_PATH, {
+          headers: { Accept: "application/json" },
+          cache: "no-cache",
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          throw new Error(`Pages payload returned ${response.status}`);
+        }
+        return {
+          fixture: normalizeFixture(await response.json()),
+          source: "pages",
+          reason: "pages_payload",
+        };
+      } catch (error) {
+        return {
+          fixture: fallback,
+          source: "builtin",
+          reason: error instanceof Error ? error.message : "pages_payload_unavailable",
+        };
+      } finally {
+        window.clearTimeout(timeout);
+      }
     }
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 1800);
@@ -157,11 +207,13 @@
       return {
         fixture: normalizeFixture(payload),
         source: "api",
+        reason: "api_loaded",
       };
-    } catch (_error) {
+    } catch (error) {
       return {
         fixture: fallback,
-        source: "builtin",
+        source: "fallback",
+        reason: error instanceof Error ? error.message : "api_unavailable",
       };
     } finally {
       window.clearTimeout(timeout);
@@ -169,14 +221,16 @@
   }
 
   function isLocalApiHost() {
-    return ["localhost", "127.0.0.1", "[::1]", "::1"].includes(window.location.hostname);
+    return ["localhost", "127.0.0.1", "0.0.0.0", "[::1]", "::1"].includes(
+      window.location.hostname,
+    );
   }
 
   function normalizeFixture(payload) {
     const root = payload?.fixture ?? payload?.demo ?? payload;
     const rawFrames = root?.frames ?? root?.sequence?.frames;
-    if (!root || !Array.isArray(rawFrames) || rawFrames.length < 2) {
-      throw new Error("invalid demo fixture: frames are required");
+    if (!root || !Array.isArray(rawFrames) || rawFrames.length !== 24) {
+      throw new Error("invalid demo fixture: exactly 24 frames are required");
     }
     if (root.schema_version !== "roadsense.demo/v1") {
       throw new Error("invalid demo fixture: unsupported schema");
@@ -194,6 +248,13 @@
     ) {
       throw new Error("invalid demo fixture: evidence boundary is not fixture-only");
     }
+    const rawFixtureId = root.fixture_id ?? root.fixtureId;
+    if (typeof rawFixtureId !== "string" || !rawFixtureId.trim()) {
+      throw new Error("invalid demo fixture: fixture_id is required");
+    }
+    if (typeof evidence.claim_boundary !== "string" || !evidence.claim_boundary.trim()) {
+      throw new Error("invalid demo fixture: claim boundary is required");
+    }
     const canvas = root.canvas ?? root.metadata?.canvas ?? {};
     if (Number(canvas.width) !== WIDTH || Number(canvas.height) !== HEIGHT) {
       throw new Error("invalid demo fixture: canvas must be 960x540");
@@ -207,10 +268,25 @@
       const rawDetections = rawFrame?.detections ?? rawFrame?.objects ?? [];
       const rawSegments = rawFrame?.segments ?? rawFrame?.segmentation ?? [];
 
+      const timestampMs = strictFiniteNumber(
+        rawFrame?.timestamp_ms ?? rawFrame?.timestampMs,
+        index * FIXTURE_CADENCE_MS,
+        "timestamp",
+      );
+      if (timestampMs < 0) {
+        throw new Error("invalid demo fixture: timestamps must be non-negative");
+      }
       return {
         index,
-        timestampMs: finiteNumber(rawFrame?.timestamp_ms ?? rawFrame?.timestampMs, index * FIXTURE_CADENCE_MS),
-        egoSpeedKph: finiteNumber(rawFrame?.ego_speed_kph ?? rawFrame?.egoSpeedKph, 28 + index * 0.3),
+        timestampMs,
+        egoSpeedKph: Math.max(
+          0,
+          strictFiniteNumber(
+            rawFrame?.ego_speed_kph ?? rawFrame?.egoSpeedKph,
+            28 + index * 0.3,
+            "ego speed",
+          ),
+        ),
         detections: rawDetections.map((item, itemIndex) => normalizeDetection(item, index, itemIndex)),
         segments: rawSegments.map(normalizeSegment).filter(Boolean),
       };
@@ -224,8 +300,27 @@
       throw new Error("invalid demo fixture: detections are required");
     }
 
+    const rawCadence =
+      root.cadence_ms ??
+      root.cadenceMs ??
+      (root.fps === undefined || root.fps === null ? undefined : 1000 / Number(root.fps));
+    const cadenceMs = strictFiniteNumber(rawCadence, FIXTURE_CADENCE_MS, "cadence");
+    if (cadenceMs !== FIXTURE_CADENCE_MS) {
+      throw new Error(`invalid demo fixture: cadence must be ${FIXTURE_CADENCE_MS} ms`);
+    }
+    if (
+      root.fps !== undefined &&
+      root.fps !== null &&
+      Math.abs(strictFiniteNumber(root.fps, 0, "fps") * cadenceMs - 1000) > 1e-6
+    ) {
+      throw new Error("invalid demo fixture: fps and cadence must describe the same cadence");
+    }
+    if (frames.some((frame, index) => frame.timestampMs !== index * cadenceMs)) {
+      throw new Error("invalid demo fixture: timestamps must follow cadence_ms from frame zero");
+    }
+
     return {
-      fixtureId: String(root.fixture_id ?? root.fixtureId ?? "roadsense-api-fixture-v1"),
+      fixtureId: rawFixtureId,
       schemaVersion: root.schema_version,
       source: root.source,
       evidence: {
@@ -233,16 +328,14 @@
         evaluationAuthorized: evidence.evaluation_authorized,
         frozen: evidence.frozen,
         benchmarkClaimAvailable: evidence.benchmark_claim_available,
+        claimBoundary: evidence.claim_boundary,
       },
       kind: "deterministic_fixture",
       canvas: {
         width: WIDTH,
         height: HEIGHT,
       },
-      cadenceMs: finiteNumber(
-        root.cadence_ms ?? root.cadenceMs ?? (root.fps ? 1000 / Number(root.fps) : null),
-        FIXTURE_CADENCE_MS,
-      ),
+      cadenceMs,
       frames,
     };
   }
@@ -252,23 +345,28 @@
     const bbox = Array.isArray(rawBox)
       ? rawBox.slice(0, 4)
       : [rawBox.x, rawBox.y, rawBox.width ?? rawBox.w, rawBox.height ?? rawBox.h];
-    const safeBox = bbox.map((value, index) => {
-      const fallback = index < 2 ? 0 : 1;
-      return finiteNumber(value, fallback);
+    const safeBox = [0, 1, 2, 3].map((index) => {
+      return requiredFiniteNumber(bbox[index], `bbox coordinate ${index}`);
     });
     const className = String(item?.class_name ?? item?.className ?? item?.label ?? "object").toLowerCase();
     const trackId = String(item?.track_id ?? item?.trackId ?? item?.id ?? `D-${frameIndex}-${itemIndex}`);
+    const x = clamp(safeBox[0], 0, WIDTH - 1);
+    const y = clamp(safeBox[1], 0, HEIGHT - 1);
 
     return {
       id: String(item?.id ?? `${trackId}-f${frameIndex}`),
       trackId,
       className,
-      confidence: clamp(finiteNumber(item?.confidence ?? item?.score, 0.5), 0, 1),
+      confidence: clamp(
+        strictFiniteNumber(item?.confidence ?? item?.score, 0.5, "confidence"),
+        0,
+        1,
+      ),
       bbox: [
-        clamp(safeBox[0], 0, WIDTH - 1),
-        clamp(safeBox[1], 0, HEIGHT - 1),
-        clamp(safeBox[2], 1, WIDTH),
-        clamp(safeBox[3], 1, HEIGHT),
+        x,
+        y,
+        clamp(safeBox[2], 1, WIDTH - x),
+        clamp(safeBox[3], 1, HEIGHT - y),
       ],
       occlusion: String(item?.occlusion ?? "none"),
     };
@@ -280,8 +378,16 @@
 
     const normalizedPolygon = polygon
       .map((point) => {
-        if (Array.isArray(point)) return [finiteNumber(point[0], 0), finiteNumber(point[1], 0)];
-        return [finiteNumber(point?.x, 0), finiteNumber(point?.y, 0)];
+        if (Array.isArray(point)) {
+          return [
+            requiredFiniteNumber(point[0], "polygon coordinate"),
+            requiredFiniteNumber(point[1], "polygon coordinate"),
+          ];
+        }
+        return [
+          requiredFiniteNumber(point?.x, "polygon coordinate"),
+          requiredFiniteNumber(point?.y, "polygon coordinate"),
+        ];
       })
       .map(([x, y]) => [clamp(x, 0, WIDTH), clamp(y, 0, HEIGHT)]);
 
@@ -295,9 +401,9 @@
   }
 
   function buildBuiltinFixture() {
-    // Keep the Pages fallback on the same 24-frame contract as the local API
-    // fixture.  This makes the offline demo deterministic and prevents the
-    // UI timeline from silently changing semantics when the API is unavailable.
+    // Emergency fallback only: it preserves the normalized UI contract when a
+    // Pages payload or local API cannot be loaded, and carries a distinct ID so
+    // it cannot be mistaken for the hashed city-loop payload.
     const frames = Array.from({ length: 24 }, (_, index) => {
       const detections = [
         detection("T-01", "car", 0.95 - index * 0.004, [574 + index * 5.5, 311 + index * 4.2, 94 + index * 2.1, 56 + index * 1.15], index),
@@ -362,7 +468,7 @@
     });
 
     return {
-      fixtureId: "roadsense-pages-fixture-v1",
+      fixtureId: "roadsense-emergency-fallback-v1",
       schemaVersion: "roadsense.demo/v1",
       source: "deterministic_geometric_fixture",
       evidence: {
@@ -370,6 +476,7 @@
         evaluationAuthorized: false,
         frozen: false,
         benchmarkClaimAvailable: false,
+        claimBoundary: "Emergency synthetic fallback only; no benchmark claim is authorized.",
       },
       kind: "deterministic_fixture",
       canvas: { width: WIDTH, height: HEIGHT },
@@ -414,7 +521,8 @@
 
   function drawCurrentFrame() {
     const canvas = elements.canvas;
-    const context = canvas.getContext("2d");
+    const context = canvas.getContext?.("2d");
+    if (!context) return;
     const ratio = Number(canvas.dataset.pixelRatio || 1);
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
     context.clearRect(0, 0, WIDTH, HEIGHT);
@@ -847,6 +955,10 @@
     }
     elements.timeline.max = String(frames.length - 1);
     elements.timeline.value = String(state.currentFrame);
+    elements.timeline.setAttribute(
+      "aria-valuetext",
+      `Frame ${frame.index + 1} of ${frames.length}, ${formatTimestamp(frame.timestampMs)}`,
+    );
     setRangeProgress(elements.timeline, state.currentFrame / Math.max(frames.length - 1, 1));
     elements.playButton.classList.toggle("is-playing", state.playing);
     elements.playButton.setAttribute("aria-pressed", String(state.playing));
@@ -877,7 +989,7 @@
     elements.frameStrip.querySelectorAll(".frame-chip").forEach((button) => {
       const active = Number(button.dataset.frame) === state.currentFrame;
       button.classList.toggle("is-active", active);
-      if (active) button.setAttribute("aria-current", "true");
+      if (active) button.setAttribute("aria-current", "step");
       else button.removeAttribute("aria-current");
     });
   }
@@ -912,7 +1024,6 @@
       button.className = "object-row";
       button.style.setProperty("--object-color", color);
       button.classList.toggle("is-active", item.trackId === state.selectedTrack);
-      button.setAttribute("role", "listitem");
       button.setAttribute("aria-pressed", String(item.trackId === state.selectedTrack));
       button.setAttribute("aria-label", `${item.trackId}, ${item.className}, confidence ${item.confidence.toFixed(2)}`);
 
@@ -990,17 +1101,48 @@
 
   function updateManifest() {
     const fixture = state.fixture;
-    const sourceLabel = state.source === "api" ? "API deterministic fixture" : "Built-in static fixture";
+    const sourceLabel =
+      state.source === "api"
+        ? "API deterministic fixture"
+        : state.source === "fallback"
+          ? "Built-in fallback (API unavailable)"
+          : state.source === "pages"
+            ? "Pages fixture · versioned payload"
+            : "Built-in static fixture (Pages fallback)";
     document.querySelector("#manifest-id").textContent = fixture.fixtureId;
     document.querySelector("#manifest-schema").textContent = fixture.schemaVersion;
     document.querySelector("#manifest-canvas").textContent = `${fixture.canvas.width} × ${fixture.canvas.height}`;
     document.querySelector("#manifest-frames").textContent = `${fixture.frames.length} frames @ ${fixture.cadenceMs} ms`;
     document.querySelector("#manifest-source").textContent = sourceLabel;
+    if (fixture.evidence) {
+      elements.manifestEvidence.textContent = fixture.evidence.level;
+      elements.manifestAuthorization.textContent = fixture.evidence.evaluationAuthorized
+        ? "authorized"
+        : "not authorized";
+      elements.manifestBenchmark.textContent = fixture.evidence.benchmarkClaimAvailable
+        ? "available"
+        : "unavailable";
+    }
   }
 
   function updateSourceStatus() {
     elements.headerStatus.classList.add("is-ready");
-    elements.sourceLabel.textContent = state.source === "api" ? "API fixture · no inference" : "Static fixture · Pages mode";
+    const labels = {
+      api: "API fixture · no inference",
+      pages: "Pages fixture · versioned payload",
+      builtin: "Static fixture · Pages fallback",
+      fallback: "Fallback fixture · API unavailable",
+    };
+    elements.sourceLabel.textContent = labels[state.source] ?? "Fixture loaded";
+    if (state.sourceReason && ["builtin", "fallback"].includes(state.source)) {
+      const reasonLabel =
+        state.source === "builtin"
+          ? `Versioned Pages payload unavailable; using built-in fixture (${state.sourceReason})`
+          : `The local demo endpoint was not accepted (${state.sourceReason})`;
+      elements.headerStatus.title = reasonLabel;
+    } else {
+      elements.headerStatus.removeAttribute("title");
+    }
   }
 
   function syncLayers() {
@@ -1122,8 +1264,16 @@
   }
 
   async function copyManifestSummary() {
+    if (!state.fixture) return;
     const fixture = state.fixture;
-    const sourceLabel = state.source === "api" ? "api_fixture" : "builtin_static_fixture";
+    const sourceLabel =
+      state.source === "api"
+        ? "api_fixture"
+        : state.source === "fallback"
+          ? "builtin_fallback_fixture"
+          : state.source === "pages"
+            ? "pages_static_payload"
+            : "builtin_emergency_fallback";
     const summary = [
       `fixture_id=${fixture.fixtureId}`,
       `schema_version=${fixture.schemaVersion}`,
@@ -1131,25 +1281,38 @@
       `frames=${fixture.frames.length}`,
       `cadence_ms=${fixture.cadenceMs}`,
       `source=${sourceLabel}`,
-      "claim_boundary=FIXTURE ONLY / NO BENCHMARK CLAIM",
+      `evidence_level=${fixture.evidence?.level ?? "fixture"}`,
+      `evaluation_authorized=${fixture.evidence?.evaluationAuthorized ?? false}`,
+      `frozen=${fixture.evidence?.frozen ?? false}`,
+      `benchmark_claim_available=${fixture.evidence?.benchmarkClaimAvailable ?? false}`,
+      `claim_boundary=${fixture.evidence?.claimBoundary ?? "FIXTURE ONLY / NO BENCHMARK CLAIM"}`,
     ].join("\n");
 
     const label = elements.copyManifest.querySelector("span");
+    if (!label) return;
+    let copied = false;
     try {
       await navigator.clipboard.writeText(summary);
-      label.textContent = "Copied";
+      copied = true;
     } catch (_error) {
-      const textarea = document.createElement("textarea");
-      textarea.value = summary;
-      textarea.setAttribute("readonly", "");
-      textarea.style.position = "fixed";
-      textarea.style.opacity = "0";
-      document.body.append(textarea);
-      textarea.select();
-      document.execCommand("copy");
-      textarea.remove();
-      label.textContent = "Copied";
+      try {
+        const textarea = document.createElement("textarea");
+        textarea.value = summary;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.append(textarea);
+        try {
+          textarea.select();
+          copied = document.execCommand("copy");
+        } finally {
+          textarea.remove();
+        }
+      } catch (_fallbackError) {
+        copied = false;
+      }
     }
+    label.textContent = copied ? "Copied" : "Copy unavailable";
     window.setTimeout(() => {
       label.textContent = "Copy manifest summary";
     }, 1600);
@@ -1261,9 +1424,20 @@
     return `rgba(${red},${green},${blue},${alpha})`;
   }
 
-  function finiteNumber(value, fallback) {
+  function strictFiniteNumber(value, fallback, fieldName) {
+    if (value === undefined || value === null || value === "") return fallback;
     const number = Number(value);
-    return Number.isFinite(number) ? number : fallback;
+    if (!Number.isFinite(number)) {
+      throw new Error(`invalid demo fixture: ${fieldName} must be finite`);
+    }
+    return number;
+  }
+
+  function requiredFiniteNumber(value, fieldName) {
+    if (value === undefined || value === null || value === "") {
+      throw new Error(`invalid demo fixture: ${fieldName} is required`);
+    }
+    return strictFiniteNumber(value, 0, fieldName);
   }
 
   function clamp(value, minimum, maximum) {

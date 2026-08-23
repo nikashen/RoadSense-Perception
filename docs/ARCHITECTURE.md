@@ -15,7 +15,7 @@ before the first frame is processed.
 
 ## Module boundaries
 
-- `contracts.py`: immutable validation models; no FastAPI or Torch dependency.
+- `contracts.py`: frozen top-level validation models; no FastAPI or Torch dependency.
 - `geometry.py`: box geometry and association primitives.
 - `metrics/`: pure detection, segmentation, and tracking evaluators.
 - `tracking/`: consumes detections and frame order only; it never opens media.
@@ -30,4 +30,3 @@ before the first frame is processed.
 The 3D milestone will add explicit coordinate frames, calibration hashes,
 point-cloud limits, camera–LiDAR fusion, BEV outputs, and 3D track state. It
 will not be smuggled into the `v0.1` 2D claims.
-

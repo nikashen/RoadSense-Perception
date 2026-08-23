@@ -11,7 +11,7 @@
   "splits": {
     "interactive": "24 generated frames; no train/test interpretation"
   },
-  "content_sha256": "5eb6923e345e4c199ac01625449ce227b96cb98fba8876f5e19d4cfbce9ff253",
+  "content_sha256": "c427846174b459483264a341ab29ef7ca8986de6e0bce1cfa41d41797f7af92f",
   "evaluation_authorized": false,
   "frozen": false,
   "notes": "Canonical SHA-256 of the deterministic build_demo_payload() JSON. This is a fixture identity, not a dataset benchmark or model artifact hash."

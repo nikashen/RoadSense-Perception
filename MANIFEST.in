@@ -1,6 +1,9 @@
-include README.md LICENSE THIRD_PARTY_NOTICES.md pyproject.toml
+include README.md LICENSE SECURITY.md THIRD_PARTY_NOTICES.md pyproject.toml
 recursive-include docs *.md
-recursive-include configs *.json
+include configs/fixture_manifest.json
+include configs/bdd100k_detection_v1.json
+include configs/bdd100k_segmentation_v1.json
+include configs/bdd100k_tracking_v1.json
 recursive-include scripts *.py
-recursive-include data *.md
-
+include data/raw/README.md
+include data/registry/bdd100k_v1.json

@@ -32,7 +32,7 @@
 }
 
 html {
-  min-width: 280px;
+  min-width: 0;
   scroll-behavior: smooth;
 }
 
@@ -430,6 +430,12 @@ h2 {
   width: 100%;
   height: 100%;
   background: #172429;
+  cursor: crosshair;
+}
+
+#scene-canvas:focus-visible {
+  outline: 2px solid var(--lime);
+  outline-offset: -3px;
 }
 
 .canvas-corner-note {
@@ -743,6 +749,11 @@ input[type="range"]::-moz-range-thumb {
   font-weight: 680;
 }
 
+.copy-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .switch-copy small {
   overflow: hidden;
   margin-top: 1px;
@@ -786,6 +797,11 @@ input[type="range"]::-moz-range-thumb {
 .switch-row input:checked + .switch {
   border-color: rgba(184, 239, 103, 0.35);
   background: rgba(184, 239, 103, 0.16);
+}
+
+.switch-row input:focus-visible + .switch {
+  outline: 2px solid var(--lime);
+  outline-offset: 3px;
 }
 
 .switch-row input:checked + .switch::after {

@@ -11,7 +11,8 @@ Every real dataset run must provide `roadsense.dataset-manifest/v1` with:
 - explicit `evaluation_authorized` and `frozen` flags.
 
 The strict loader rejects duplicate JSON keys, non-finite numbers, invalid UTF-8,
-unknown fields, duplicate tasks, and an unauthorized frozen state.
+unknown fields, duplicate tasks, all-zero placeholder hashes, and an unauthorized
+frozen state.
 
 ## BDD100K plan
 
@@ -22,4 +23,3 @@ file inventory, sequence IDs, and split membership. Random frame-level splits
 are prohibited because they leak adjacent frames across evaluation boundaries.
 
 No dataset byte is needed for the current Pages fixture.
-

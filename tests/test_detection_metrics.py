@@ -66,3 +66,60 @@ def test_detection_protocol_does_not_claim_coco_map() -> None:
 def test_detection_requires_aligned_frames() -> None:
     with pytest.raises(ValueError, match="align"):
         evaluate_detection((_frame(0, ()),), (_frame(1, ()),))
+
+
+def test_detection_rejects_duplicate_or_regressing_frame_sequence() -> None:
+    frame_zero = _frame(0, ())
+    with pytest.raises(ValueError, match="unique"):
+        evaluate_detection((frame_zero, frame_zero), (frame_zero, frame_zero))
+
+    frame_one = _frame(1, ())
+    frame_two_with_regressed_timestamp = FrameRecord(
+        frame_index=2,
+        timestamp_ms=50,
+        image_size=SIZE,
+        detections=(),
+    )
+    with pytest.raises(ValueError, match="monotonic"):
+        evaluate_detection(
+            (frame_one, frame_two_with_regressed_timestamp),
+            (frame_one, frame_two_with_regressed_timestamp),
+        )
+
+
+def test_detection_rejects_invalid_threshold_even_for_empty_frames() -> None:
+    frame = _frame(0, ())
+    with pytest.raises(ValueError, match="iou_threshold"):
+        evaluate_detection((frame,), (frame,), iou_threshold=1.1)
+
+
+def test_detection_is_invariant_to_ground_truth_detection_order() -> None:
+    size = ImageSize(width=20, height=20)
+
+    def frame(detections: tuple[Detection, ...]) -> FrameRecord:
+        return FrameRecord(
+            frame_index=0,
+            timestamp_ms=0,
+            image_size=size,
+            detections=detections,
+        )
+
+    def box(x_min: float, x_max: float) -> Detection:
+        return Detection(
+            category_id=1,
+            bbox=BoxXYXY(x_min=x_min, y_min=1, x_max=x_max, y_max=2),
+        )
+
+    truth = (box(3, 8), box(1, 6))
+    predictions = (box(6, 9), box(1, 10))
+    first = evaluate_detection(
+        (frame(truth),),
+        (frame(predictions),),
+        iou_threshold=0.3,
+    )
+    second = evaluate_detection(
+        (frame(tuple(reversed(truth))),),
+        (frame(predictions),),
+        iou_threshold=0.3,
+    )
+    assert first == second

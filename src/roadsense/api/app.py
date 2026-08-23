@@ -42,6 +42,7 @@ def create_app() -> Any:
     async def readiness() -> dict[str, object]:
         return {
             "status": "ready",
+            "service_mode": "fixture_replay",
             "verification_level": "fixture",
             "model_loaded": False,
             "benchmark_claim_available": False,

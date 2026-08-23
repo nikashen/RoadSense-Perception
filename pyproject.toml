@@ -40,6 +40,7 @@ vision = [
 dev = [
   "build>=1.2,<2",
   "httpx>=0.28,<0.29",
+  "httpx2>=2,<3",
   "mypy>=1.13,<2",
   "pytest>=8,<9",
   "ruff>=0.8,<1",
@@ -70,4 +71,3 @@ python_version = "3.10"
 strict = true
 warn_unused_ignores = true
 files = ["src/roadsense/contracts.py", "src/roadsense/geometry.py", "src/roadsense/metrics", "src/roadsense/tracking"]
-

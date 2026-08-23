@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from roadsense.api import create_app
+from roadsense.api.models import ReportResponse
 from roadsense.cli import main
 
 
@@ -36,6 +39,7 @@ def test_api_health_readiness_demo_and_report() -> None:
             assert client.get(asset).status_code == 200
         assert client.get("/api/v1/health").json()["status"] == "ok"
         readiness = client.get("/api/v1/readiness").json()
+        assert readiness["service_mode"] == "fixture_replay"
         assert readiness["verification_level"] == "fixture"
         assert readiness["model_loaded"] is False
         demo = client.get("/api/v1/demo")
@@ -43,3 +47,23 @@ def test_api_health_readiness_demo_and_report() -> None:
         assert len(demo.json()["frames"]) == 24
         report = client.get("/api/v1/report").json()
         assert report["evaluation_authorized"] is False
+        validated_report = ReportResponse.model_validate(report)
+        with pytest.raises(TypeError, match="immutable"):
+            validated_report.details["tampered"] = True
+        report["details"] = {"tampered": True}
+        with pytest.raises(ValidationError, match="report_id"):
+            ReportResponse.model_validate(report)
+
+
+def test_api_report_rejects_inconsistent_evidence_flags() -> None:
+    from roadsense.evidence import build_fixture_report
+
+    payload = build_fixture_report()
+    payload["evaluation_authorized"] = True
+    with pytest.raises(ValidationError, match="fixture reports"):
+        ReportResponse.model_validate(payload)
+
+    payload = build_fixture_report()
+    payload["dataset_manifest_sha256"] = "not-a-sha256"
+    with pytest.raises(ValidationError, match="sha256"):
+        ReportResponse.model_validate(payload)

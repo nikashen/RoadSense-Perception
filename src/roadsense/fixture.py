@@ -118,6 +118,10 @@ def _paint_mask(
         inset = round((row - horizon) * 0.34)
         left = max(0, 45 - inset)
         right = min(SEGMENTATION_WIDTH, 115 + inset)
+        # Keep the raster ontology aligned with the display polygons: road=1,
+        # car=2, vulnerable road user=3, sidewalk=4, background=0.
+        mask[row, :left] = 4
+        mask[row, right:] = 4
         mask[row, left:right] = 1
     for detection in detections:
         if predicted and detection.label == "pedestrian" and frame_index in {10, 11, 12}:
@@ -180,7 +184,7 @@ def build_fixture_metrics(bundle: FixtureBundle | None = None) -> dict[str, obje
         "segmentation": evaluate_segmentation(
             selected.truth_masks,
             selected.prediction_masks,
-            num_classes=4,
+            num_classes=5,
         ),
         "tracking": evaluate_tracking(selected.truth_frames, selected.prediction_frames),
     }
@@ -229,6 +233,12 @@ def build_demo_payload(bundle: FixtureBundle | None = None) -> dict[str, object]
                         "polygon": [[0, 540], [0, 345], [285, 255], [225, 540]],
                         "confidence": 0.88,
                     },
+                    {
+                        "label": "sidewalk",
+                        "category_id": 4,
+                        "polygon": [[675, 255], [960, 345], [960, 540], [735, 540]],
+                        "confidence": 0.88,
+                    },
                 ],
             }
         )
@@ -244,6 +254,13 @@ def build_demo_payload(bundle: FixtureBundle | None = None) -> dict[str, object]
             {"id": 1, "label": "car", "color": "#64d8cb"},
             {"id": 2, "label": "pedestrian", "color": "#ffbc69"},
             {"id": 3, "label": "cyclist", "color": "#c8a7ff"},
+        ],
+        "segmentation_categories": [
+            {"id": 0, "label": "background", "color": "#071411"},
+            {"id": 1, "label": "road", "color": "#42e1c3"},
+            {"id": 2, "label": "car", "color": "#64d8cb"},
+            {"id": 3, "label": "vulnerable road user", "color": "#c8a7ff"},
+            {"id": 4, "label": "sidewalk", "color": "#a99aff"},
         ],
         "frames": frames,
         "metrics": metrics,

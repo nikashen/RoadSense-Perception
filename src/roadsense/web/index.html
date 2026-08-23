@@ -28,10 +28,18 @@
       </a>
 
       <nav class="site-nav" aria-label="Primary navigation">
-        <button class="nav-button is-active" type="button" data-view="lab" aria-current="page">
+        <button
+          class="nav-button is-active"
+          type="button"
+          data-view="lab"
+          aria-current="page"
+          aria-controls="lab-view"
+        >
           Lab
         </button>
-        <button class="nav-button" type="button" data-view="evidence">Evidence</button>
+        <button class="nav-button" type="button" data-view="evidence" aria-controls="evidence-view">
+          Evidence
+        </button>
       </nav>
 
       <div class="header-status" aria-live="polite">
@@ -40,7 +48,7 @@
       </div>
     </header>
 
-    <main id="workspace">
+    <main id="workspace" tabindex="-1">
       <section class="view is-active" id="lab-view" data-view-panel="lab">
         <div class="intro-row">
           <div>
@@ -70,15 +78,22 @@
               </div>
             </div>
 
-            <div class="canvas-shell" id="canvas-shell">
+            <div class="canvas-shell" id="canvas-shell" aria-busy="true">
               <canvas
                 id="scene-canvas"
                 width="960"
                 height="540"
+                role="img"
+                tabindex="0"
+                aria-describedby="scene-description"
                 aria-label="Deterministic road scene with perception overlays"
               >
                 Deterministic road-scene fixture. Use the object list for a text representation.
               </canvas>
+              <p class="sr-only" id="scene-description">
+                Focus the scene and use the left and right arrow keys to step frames, or Space to
+                play and pause. Select an object from the frame inventory for track details.
+              </p>
               <div class="canvas-corner-note" aria-hidden="true">
                 <span class="pulse-dot"></span>
                 DETERMINISTIC FIXTURE
@@ -89,7 +104,7 @@
               </div>
             </div>
 
-            <div class="transport" aria-label="Playback controls">
+            <div class="transport" role="group" aria-label="Playback controls">
               <button class="icon-button" id="reset-button" type="button" title="Reset (Home)">
                 <svg viewBox="0 0 24 24" aria-hidden="true">
                   <path d="M4.8 8.2A8 8 0 1 1 4 14" />
@@ -137,7 +152,7 @@
               </div>
             </div>
 
-            <div class="frame-strip" id="frame-strip" aria-label="Frame list"></div>
+            <div class="frame-strip" id="frame-strip" role="group" aria-label="Frame list"></div>
           </section>
 
           <aside class="inspector" aria-label="Perception inspector">
@@ -237,7 +252,7 @@
                 </div>
                 <span class="object-count" id="object-count">0 shown</span>
               </div>
-              <div class="object-list" id="object-list" role="list"></div>
+              <div class="object-list" id="object-list" role="group" aria-label="Objects in current frame"></div>
               <div class="object-detail" id="object-detail" aria-live="polite"></div>
             </section>
           </aside>
@@ -266,8 +281,9 @@
             <p class="section-kicker">DEMO MANIFEST</p>
             <h2>Deterministic render contract</h2>
             <p>
-              The client requests <code>/api/v1/demo</code> first. GitHub Pages and offline use fall
-              back to an equivalent built-in fixture with the same normalized schema.
+              Localhost mode loads <code>/api/v1/demo</code> and validates its evidence flags.
+              GitHub Pages loads the versioned <code>demo.json</code> replay; if that payload is
+              unavailable, the client marks the built-in fallback instead of hiding the failure.
             </p>
             <dl class="manifest-list">
               <div><dt>Fixture ID</dt><dd id="manifest-id">—</dd></div>
@@ -275,8 +291,11 @@
               <div><dt>Canvas</dt><dd id="manifest-canvas">—</dd></div>
               <div><dt>Sequence</dt><dd id="manifest-frames">—</dd></div>
               <div><dt>Active source</dt><dd id="manifest-source">—</dd></div>
+              <div><dt>Evidence level</dt><dd id="manifest-evidence">—</dd></div>
+              <div><dt>Evaluation</dt><dd id="manifest-authorization">—</dd></div>
+              <div><dt>Benchmark claim</dt><dd id="manifest-benchmark">—</dd></div>
             </dl>
-            <button class="copy-button" id="copy-manifest" type="button">
+            <button class="copy-button" id="copy-manifest" type="button" disabled>
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <rect x="8" y="8" width="11" height="11" rx="2" />
                 <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
@@ -293,7 +312,7 @@
               <li>Playback, stepping, reset, and timeline state transitions</li>
               <li>Overlay compositing and confidence-filter behavior</li>
               <li>Detection, semantic region, and track-detail presentation contracts</li>
-              <li>API-first loading with an explicit static fallback</li>
+              <li>Local API loading with an explicit static fallback</li>
               <li>Responsive interaction at desktop and narrow mobile widths</li>
             </ul>
           </article>

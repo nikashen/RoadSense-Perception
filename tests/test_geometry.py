@@ -52,3 +52,46 @@ def test_greedy_match_returns_deterministic_pairs() -> None:
 def test_greedy_match_rejects_invalid_threshold() -> None:
     with pytest.raises(ValueError, match="iou_threshold"):
         greedy_iou_match((), (), iou_threshold=1.1)
+
+    with pytest.raises(ValueError, match="iou_threshold"):
+        greedy_iou_match((), (), iou_threshold=float("nan"))
+
+    with pytest.raises((TypeError, ValueError), match="iou_threshold"):
+        greedy_iou_match((), (), iou_threshold=True)
+
+
+def test_iou_is_stable_for_large_finite_coordinates() -> None:
+    left = BoxXYXY(x_min=-1e308, y_min=-1e308, x_max=1e308, y_max=1e308)
+    assert intersection_over_union(left, left) == pytest.approx(1.0)
+
+
+def test_iou_is_stable_for_subnormal_scale_coordinates() -> None:
+    left = BoxXYXY(x_min=0.0, y_min=0.0, x_max=1e-320, y_max=1e-320)
+    assert intersection_over_union(left, left) == pytest.approx(1.0)
+
+
+def test_greedy_match_is_invariant_to_detection_container_order() -> None:
+    def tracked(x_min: float, x_max: float, track_id: int) -> Detection:
+        return Detection(
+            category_id=1,
+            track_id=track_id,
+            bbox=BoxXYXY(x_min=x_min, y_min=1, x_max=x_max, y_max=2),
+        )
+
+    left_a, left_b = tracked(3, 8, 10), tracked(1, 6, 11)
+    right_a, right_b = tracked(6, 9, 20), tracked(1, 10, 21)
+    first_left = (left_a, left_b)
+    first_right = (right_a, right_b)
+    second_left = (left_b, left_a)
+    second_right = (right_b, right_a)
+    first = greedy_iou_match(first_left, first_right, iou_threshold=0.3)
+    second = greedy_iou_match(second_left, second_right, iou_threshold=0.3)
+    first_pairs = {
+        (first_left[match.left_index].track_id, first_right[match.right_index].track_id)
+        for match in first.matches
+    }
+    second_pairs = {
+        (second_left[match.left_index].track_id, second_right[match.right_index].track_id)
+        for match in second.matches
+    }
+    assert first_pairs == second_pairs == {(10, 20), (11, 21)}

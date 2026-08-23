@@ -51,3 +51,29 @@ def test_segmentation_rejects_all_ignored() -> None:
             np.zeros((2, 2)),
             num_classes=2,
         )
+
+
+def test_segmentation_rejects_float_labels_instead_of_truncating() -> None:
+    with pytest.raises(ValueError, match="integer dtype"):
+        evaluate_segmentation(
+            np.asarray([[0.9]], dtype=np.float32),
+            np.asarray([[0]], dtype=np.int64),
+            num_classes=2,
+        )
+
+    with pytest.raises(ValueError, match="integer dtype"):
+        evaluate_segmentation(
+            np.asarray([[0]], dtype=np.int64),
+            np.asarray([[0.9]], dtype=np.float32),
+            num_classes=2,
+        )
+
+
+def test_segmentation_rejects_invalid_integer_parameters() -> None:
+    truth = np.asarray([[0]], dtype=np.int64)
+    with pytest.raises((TypeError, ValueError), match="num_classes"):
+        evaluate_segmentation(truth, truth, num_classes=True)
+    with pytest.raises(ValueError, match="num_classes"):
+        evaluate_segmentation(truth, truth, num_classes=2049)
+    with pytest.raises((TypeError, ValueError), match="ignore_index"):
+        evaluate_segmentation(truth, truth, num_classes=2, ignore_index=1.5)

@@ -16,8 +16,13 @@ Pydantic models and reject malformed fixture payloads at the server boundary.
 
 `/api/v1/demo` returns `roadsense.demo/v1`, including a fixture ID, canvas,
 ordered frames, objects in `xywh` display coordinates, segmentation polygons,
-and evidence flags. `/api/v1/report` returns a sanitized fixture report with
-the same explicit non-benchmark boundary.
+separate detection and segmentation ontologies, and evidence flags.
+The v1 fixture contract contains exactly 24 ordered frames at 100 ms cadence.
+`/api/v1/report` returns a sanitized fixture report with
+the same explicit non-benchmark boundary. Its 16-character `report_id` binds
+the complete report, including detailed diagnostics, with canonical JSON.
+`/api/v1/readiness` reports `service_mode=fixture_replay`; `ready` does not mean
+that a real detector or segmenter model is loaded.
 
 The future local inference API will add bounded image/video/session inputs,
 frame sequence numbers, content hashes, and model readiness. It will not

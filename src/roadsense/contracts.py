@@ -5,11 +5,57 @@ from __future__ import annotations
 import math
 import re
 from enum import Enum
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal, NoReturn, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
+
+
+class FrozenDict(dict[str, Any]):
+    """A JSON-compatible mapping that rejects in-place mutation."""
+
+    def _blocked(self, *args: object, **kwargs: object) -> NoReturn:
+        del args, kwargs
+        raise TypeError("mapping is immutable")
+
+    __setitem__ = _blocked
+    __delitem__ = _blocked
+    clear = _blocked
+    pop = _blocked
+    popitem = _blocked
+    setdefault = _blocked
+    update = _blocked
+    __ior__ = _blocked
+
+
+def freeze_value(value: Any) -> Any:
+    """Recursively freeze JSON containers while preserving JSON serialization."""
+
+    if isinstance(value, dict):
+        return FrozenDict({key: freeze_value(item) for key, item in value.items()})
+    if isinstance(value, (list, tuple)):
+        return tuple(freeze_value(item) for item in value)
+    if isinstance(value, set):
+        return frozenset(freeze_value(item) for item in value)
+    return value
+
+
+def strict_bool(value: object) -> bool:
+    """Reject numeric/string coercion for evidence authorization flags."""
+
+    if not isinstance(value, bool):
+        raise TypeError("value must be a boolean")
+    return value
+
+
+def validate_bool(value: object) -> bool:
+    """Pydantic-friendly wrapper for :func:`strict_bool`."""
+
+    try:
+        return strict_bool(value)
+    except TypeError as exc:
+        raise ValueError(str(exc)) from exc
 
 
 class StringEnum(str, Enum):
@@ -112,12 +158,24 @@ class DatasetManifest(StrictModel):
     frozen: bool
     notes: Annotated[str, Field(max_length=2_000)] = ""
 
+    @field_validator("evaluation_authorized", "frozen", mode="before")
+    @classmethod
+    def flags_must_be_boolean(cls, value: object) -> bool:
+        return validate_bool(value)
+
+    @field_validator("splits", mode="after")
+    @classmethod
+    def freeze_splits(cls, value: dict[str, str]) -> dict[str, str]:
+        return cast(dict[str, str], freeze_value(value))
+
     @model_validator(mode="after")
     def validate_manifest(self) -> DatasetManifest:
         if not self.tasks or len(set(self.tasks)) != len(self.tasks):
             raise ValueError("tasks must be non-empty and unique")
         if not self.splits or any(not key.strip() for key in self.splits):
             raise ValueError("splits must be non-empty with named entries")
+        if self.content_sha256 == "0" * 64:
+            raise ValueError("content_sha256 cannot be an all-zero placeholder")
         if self.frozen and not self.evaluation_authorized:
             raise ValueError("a frozen evaluation must be explicitly authorized")
         return self
@@ -133,10 +191,26 @@ class EvaluationReport(StrictModel):
     metrics: dict[str, float]
     claim_boundary: Annotated[str, Field(min_length=1, max_length=2_000)]
 
+    @field_validator("evaluation_authorized", "frozen", mode="before")
+    @classmethod
+    def flags_must_be_boolean(cls, value: object) -> bool:
+        return validate_bool(value)
+
+    @field_validator("metrics", mode="after")
+    @classmethod
+    def freeze_metrics(cls, value: dict[str, float]) -> dict[str, float]:
+        return cast(dict[str, float], freeze_value(value))
+
     @model_validator(mode="after")
     def validate_report(self) -> EvaluationReport:
+        if not self.metrics or any(not key.strip() for key in self.metrics):
+            raise ValueError("evaluation reports require named metrics")
         if any(not math.isfinite(value) for value in self.metrics.values()):
             raise ValueError("metrics must contain finite values")
+        if self.evidence_level is EvidenceLevel.FIXTURE and (
+            self.evaluation_authorized or self.frozen
+        ):
+            raise ValueError("fixture evidence cannot be authorized or frozen")
         if self.evidence_level is EvidenceLevel.FROZEN_EVALUATION:
             if not self.evaluation_authorized or not self.frozen:
                 raise ValueError("frozen evidence requires authorization and a frozen report")
@@ -144,4 +218,6 @@ class EvaluationReport(StrictModel):
                 raise ValueError("frozen evidence requires a dataset manifest hash")
         if self.frozen and not self.evaluation_authorized:
             raise ValueError("frozen reports must be authorized")
+        if self.frozen and self.evidence_level is not EvidenceLevel.FROZEN_EVALUATION:
+            raise ValueError("frozen reports must use frozen_evaluation evidence")
         return self

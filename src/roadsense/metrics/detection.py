@@ -8,7 +8,8 @@ import numpy as np
 from numpy.typing import NDArray
 
 from roadsense.contracts import Detection, FrameRecord
-from roadsense.geometry import greedy_iou_match
+from roadsense.geometry import greedy_iou_match, validate_iou_threshold
+from roadsense.metrics._validation import validate_aligned_sequences
 
 
 def _average_precision(recalls: NDArray[np.float64], precisions: NDArray[np.float64]) -> float:
@@ -30,13 +31,8 @@ def evaluate_detection(
     *,
     iou_threshold: float = 0.5,
 ) -> dict[str, object]:
-    if len(ground_truth) != len(predictions) or not ground_truth:
-        raise ValueError("ground-truth and prediction sequences must be non-empty and aligned")
-    if any(
-        truth.frame_index != prediction.frame_index
-        for truth, prediction in zip(ground_truth, predictions, strict=True)
-    ):
-        raise ValueError("frame indices must align")
+    validate_aligned_sequences(ground_truth, predictions)
+    iou_threshold = validate_iou_threshold(iou_threshold)
     categories = sorted(
         {
             detection.category_id
@@ -50,25 +46,56 @@ def evaluate_detection(
     for category_id in categories:
         truth_by_frame: dict[int, tuple[Detection, ...]] = {}
         truth_count = 0
-        scored_predictions: list[tuple[float, int, Detection]] = []
+        scored_predictions: list[tuple[float, int, float, float, float, float, int, Detection]] = []
         for truth_frame, prediction_frame in zip(ground_truth, predictions, strict=True):
             class_truth = tuple(
-                detection
-                for detection in truth_frame.detections
-                if detection.category_id == category_id
+                sorted(
+                    (
+                        detection
+                        for detection in truth_frame.detections
+                        if detection.category_id == category_id
+                    ),
+                    key=lambda detection: (
+                        detection.bbox.x_min,
+                        detection.bbox.y_min,
+                        detection.bbox.x_max,
+                        detection.bbox.y_max,
+                    ),
+                )
             )
             truth_by_frame[truth_frame.frame_index] = class_truth
             truth_count += len(class_truth)
             scored_predictions.extend(
-                (detection.score, prediction_frame.frame_index, detection)
-                for detection in prediction_frame.detections
+                (
+                    detection.score,
+                    prediction_frame.frame_index,
+                    detection.bbox.x_min,
+                    detection.bbox.y_min,
+                    detection.bbox.x_max,
+                    detection.bbox.y_max,
+                    detection_index,
+                    detection,
+                )
+                for detection_index, detection in enumerate(prediction_frame.detections)
                 if detection.category_id == category_id
             )
-        scored_predictions.sort(key=lambda item: (-item[0], item[1], item[2].bbox.x_min))
+        # AP is sensitive to the order of equal-score predictions.  Include
+        # every geometric coordinate in the tie-break so a report is stable
+        # even when the upstream adapter changes object iteration order.
+        scored_predictions.sort(key=lambda item: (-item[0], *item[1:7]))
         claimed: dict[int, set[int]] = defaultdict(set)
         true_flags: list[float] = []
         false_flags: list[float] = []
-        for _score, frame_index, prediction in scored_predictions:
+        for (
+            _score,
+            frame_index,
+            _x_min,
+            _y_min,
+            _x_max,
+            _y_max,
+            _detection_index,
+            prediction,
+        ) in scored_predictions:
             candidates = tuple(
                 detection
                 for index, detection in enumerate(truth_by_frame[frame_index])

@@ -94,6 +94,20 @@ def test_manifest_rejects_frozen_without_authorization() -> None:
         DatasetManifest.model_validate(payload)
 
 
+def test_manifest_rejects_placeholder_content_hash() -> None:
+    payload = _manifest_payload()
+    payload["content_sha256"] = "0" * 64
+    with pytest.raises(ValidationError, match="placeholder"):
+        DatasetManifest.model_validate(payload)
+
+
+def test_manifest_rejects_coerced_evidence_flags() -> None:
+    payload = _manifest_payload()
+    payload["evaluation_authorized"] = "false"
+    with pytest.raises(ValidationError, match="boolean"):
+        DatasetManifest.model_validate(payload)
+
+
 def test_frozen_report_requires_manifest_hash() -> None:
     with pytest.raises(ValidationError, match="manifest"):
         EvaluationReport(
@@ -105,3 +119,61 @@ def test_frozen_report_requires_manifest_hash() -> None:
             metrics={"ap": 0.5},
             claim_boundary="test only",
         )
+
+
+def test_fixture_report_cannot_be_marked_authorized_or_frozen() -> None:
+    with pytest.raises(ValidationError, match="fixture evidence"):
+        EvaluationReport(
+            schema_version="roadsense.evaluation-report/v1",
+            protocol_id="test/v1",
+            evidence_level=EvidenceLevel.FIXTURE,
+            evaluation_authorized=True,
+            frozen=False,
+            metrics={"ap": 0.5},
+            claim_boundary="test only",
+        )
+
+
+def test_development_report_cannot_be_frozen() -> None:
+    with pytest.raises(ValidationError, match="frozen_evaluation"):
+        EvaluationReport(
+            schema_version="roadsense.evaluation-report/v1",
+            protocol_id="test/v1",
+            evidence_level=EvidenceLevel.DEVELOPMENT,
+            evaluation_authorized=True,
+            frozen=True,
+            dataset_manifest_sha256="a" * 64,
+            metrics={"ap": 0.5},
+            claim_boundary="test only",
+        )
+
+
+def test_evaluation_report_requires_named_metrics() -> None:
+    with pytest.raises(ValidationError, match="named metrics"):
+        EvaluationReport(
+            schema_version="roadsense.evaluation-report/v1",
+            protocol_id="test/v1",
+            evidence_level=EvidenceLevel.FIXTURE,
+            evaluation_authorized=False,
+            frozen=False,
+            metrics={},
+            claim_boundary="test only",
+        )
+
+
+def test_frozen_contract_containers_reject_in_place_mutation() -> None:
+    manifest = DatasetManifest.model_validate(_manifest_payload())
+    with pytest.raises(TypeError, match="immutable"):
+        manifest.splits["dev"] = "tampered"
+
+    report = EvaluationReport(
+        schema_version="roadsense.evaluation-report/v1",
+        protocol_id="test/v1",
+        evidence_level=EvidenceLevel.FIXTURE,
+        evaluation_authorized=False,
+        frozen=False,
+        metrics={"ap": 0.5},
+        claim_boundary="test only",
+    )
+    with pytest.raises(TypeError, match="immutable"):
+        report.metrics["ap"] = 0.0

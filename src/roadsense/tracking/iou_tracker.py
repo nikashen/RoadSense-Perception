@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import operator
 from dataclasses import dataclass
+from typing import SupportsIndex, cast
 
 from roadsense.contracts import BoxXYXY, Detection
-from roadsense.geometry import greedy_iou_match
+from roadsense.geometry import canonical_detection_key, greedy_iou_match, validate_iou_threshold
 
 
 @dataclass(slots=True)
@@ -24,15 +26,17 @@ class IoUTracker:
         max_age: int = 2,
         min_score: float = 0.25,
     ) -> None:
-        if not 0.0 <= iou_threshold <= 1.0:
-            raise ValueError("iou_threshold must be in [0, 1]")
-        if isinstance(max_age, bool) or max_age < 0:
-            raise ValueError("max_age must be non-negative")
-        if not 0.0 <= min_score <= 1.0:
-            raise ValueError("min_score must be in [0, 1]")
-        self.iou_threshold = iou_threshold
-        self.max_age = max_age
-        self.min_score = min_score
+        self.iou_threshold = validate_iou_threshold(iou_threshold)
+        if isinstance(max_age, bool):
+            raise TypeError("max_age must be a non-negative integer")
+        try:
+            normalized_max_age = operator.index(cast(SupportsIndex, max_age))
+        except TypeError as exc:
+            raise TypeError("max_age must be a non-negative integer") from exc
+        if normalized_max_age < 0:
+            raise ValueError("max_age must be a non-negative integer")
+        self.max_age = normalized_max_age
+        self.min_score = validate_iou_threshold(min_score)
         self._tracks: list[_Track] = []
         self._next_track_id = 1
 
@@ -73,7 +77,10 @@ class IoUTracker:
             if track.age <= self.max_age:
                 survivors.append(track)
         self._tracks = survivors
-        for detection_index in result.unmatched_right:
+        for detection_index in sorted(
+            result.unmatched_right,
+            key=lambda index: canonical_detection_key(filtered[index]),
+        ):
             detection = filtered[detection_index]
             tracked = Detection(
                 category_id=detection.category_id,

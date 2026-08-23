@@ -2,8 +2,20 @@
 
 from __future__ import annotations
 
+import operator
+from typing import SupportsIndex, cast
+
 import numpy as np
 from numpy.typing import NDArray
+
+
+def _integer_parameter(value: object, name: str) -> int:
+    if isinstance(value, bool):
+        raise TypeError(f"{name} must be an integer")
+    try:
+        return operator.index(cast(SupportsIndex, value))
+    except TypeError as exc:
+        raise TypeError(f"{name} must be an integer") from exc
 
 
 def evaluate_segmentation(
@@ -13,17 +25,41 @@ def evaluate_segmentation(
     num_classes: int,
     ignore_index: int = 255,
 ) -> dict[str, object]:
-    if ground_truth.shape != predictions.shape or ground_truth.size == 0:
+    num_classes = _integer_parameter(num_classes, "num_classes")
+    ignore_index = _integer_parameter(ignore_index, "ignore_index")
+    ground_truth_array = np.asarray(ground_truth)
+    prediction_array = np.asarray(predictions)
+    if ground_truth_array.shape != prediction_array.shape or ground_truth_array.size == 0:
         raise ValueError("segmentation arrays must be non-empty and share a shape")
     if not 2 <= num_classes <= 10_000:
         raise ValueError("num_classes must be in [2, 10000]")
-    truth = np.asarray(ground_truth, dtype=np.int64).reshape(-1)
-    prediction = np.asarray(predictions, dtype=np.int64).reshape(-1)
-    valid = truth != ignore_index
-    truth = truth[valid]
-    prediction = prediction[valid]
-    if truth.size == 0:
+    # The protocol returns a dense matrix.  Bound its size before allocating
+    # ``num_classes²`` bins so an untrusted manifest cannot trigger a huge
+    # memory allocation (4M int64 cells is approximately 32 MiB).
+    if num_classes * num_classes > 4_000_000:
+        raise ValueError("num_classes is too large for the dense confusion matrix")
+    if not np.issubdtype(ground_truth_array.dtype, np.integer):
+        raise ValueError("segmentation labels must use an integer dtype")
+    truth_raw = ground_truth_array.reshape(-1)
+    prediction_raw = prediction_array.reshape(-1)
+    valid = truth_raw != ignore_index
+    truth_raw = truth_raw[valid]
+    prediction_raw = prediction_raw[valid]
+    if truth_raw.size == 0:
         raise ValueError("all segmentation pixels are ignored")
+    if not np.issubdtype(prediction_array.dtype, np.integer):
+        raise ValueError("segmentation labels must use an integer dtype")
+    # Avoid silent uint64 -> int64 wraparound before range checks.
+    if np.issubdtype(truth_raw.dtype, np.unsignedinteger) and np.any(
+        truth_raw > np.iinfo(np.int64).max
+    ):
+        raise ValueError("segmentation labels are outside the configured class range")
+    if np.issubdtype(prediction_raw.dtype, np.unsignedinteger) and np.any(
+        prediction_raw > np.iinfo(np.int64).max
+    ):
+        raise ValueError("segmentation labels are outside the configured class range")
+    truth = truth_raw.astype(np.int64, copy=False)
+    prediction = prediction_raw.astype(np.int64, copy=False)
     if (
         np.any(truth < 0)
         or np.any(truth >= num_classes)

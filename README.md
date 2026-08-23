@@ -6,7 +6,7 @@ semantic segmentation, and multi-object tracking; a later `v0.2` milestone
 will add point clouds, camera–LiDAR calibration, BEV features, and 3D tracking.
 
 It is deliberately not presented as an autonomous-driving safety system. The
-public Pages demo uses a procedural city-loop fixture so that the interface,
+Pages demo uses a procedural city-loop fixture so that the interface,
 frame state, overlays, and evidence boundary can be checked without silently
 downloading images or model weights.
 
@@ -14,13 +14,15 @@ downloading images or model weights.
 
 The repository currently contains:
 
-- strict immutable contracts for image frames, boxes, detections, manifests,
+- strict frozen contracts for image frames, boxes, detections, manifests,
   and evaluation reports;
 - geometry-safe IoU and deterministic greedy association;
 - compact detection AP, semantic IoU, and tracking MOTA/identity-F1 protocols;
 - an explicit IoU tracker baseline with aging, score filtering, and reset;
 - a 24-frame synthetic road sequence containing successful tracks, misses,
   false positives, and an identity-switch case;
+- a Pages build that emits a hashed `demo.json` from the same payload as the
+  local API, with an emergency fixture fallback only when that artifact is unavailable;
 - FastAPI endpoints and a responsive Perception Workbench;
 - strict JSON, canonical hashes, atomic reports, package smoke tests, and
   Linux/Windows CI scaffolding.
@@ -46,8 +48,8 @@ track selection, a frame inventory, and an evidence view.
 For a dependency-light check:
 
 ```powershell
-\.venv\Scripts\python.exe -m roadsense smoke --json
-\.venv\Scripts\python.exe scripts\build_pages.py --output dist\pages
+.\.venv\Scripts\python.exe -m roadsense smoke --json
+.\.venv\Scripts\python.exe scripts\build_pages.py --output dist\pages
 ```
 
 ## Engineering shape
@@ -98,17 +100,19 @@ the only valid public state.
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest
+.\.venv\Scripts\python.exe -m pip check
 .\.venv\Scripts\python.exe -m ruff check src scripts tests
 .\.venv\Scripts\python.exe -m ruff format --check src scripts tests
 .\.venv\Scripts\python.exe -m mypy src\roadsense
 .\.venv\Scripts\python.exe -m compileall -q src scripts tests
 node --check src\roadsense\web\app.js
 .\.venv\Scripts\python.exe -m build
+.\.venv\Scripts\python.exe scripts\verify_pages.py dist\pages
 ```
 
-The initial local gate has 56 passing tests. A Starlette/httpx deprecation
-warning may appear in the optional FastAPI test client; it does not change the
-fixture or API result.
+The local gate is expected to be green before a development snapshot is
+published. CI reports the exact test count. The development extra includes
+the Starlette-compatible `httpx2` client used by the API contract tests.
 
 ## Resume positioning
 
