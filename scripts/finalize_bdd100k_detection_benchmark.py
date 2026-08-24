@@ -52,9 +52,15 @@ try:
     # parent.  Direct ``python scripts/finalize_...py`` execution instead
     # places only ``scripts/`` on ``sys.path``; mirror the runner's sibling
     # fallback so the documented command works in both modes.
-    from scripts.run_bdd100k_detection_benchmark import FrozenManifestError
+    from scripts.run_bdd100k_detection_benchmark import (
+        FrozenManifestError,
+        validate_frozen_image_manifest,
+    )
 except ModuleNotFoundError:  # pragma: no cover - exercised by direct script CLI
-    from run_bdd100k_detection_benchmark import FrozenManifestError  # type: ignore[no-redef]
+    from run_bdd100k_detection_benchmark import (  # type: ignore[no-redef]
+        FrozenManifestError,
+        validate_frozen_image_manifest,
+    )
 
 FINALIZE_SCHEMA = "roadsense.bdd100k-detection-finalize/v1"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -281,9 +287,7 @@ def _validate_prepared_evidence(
         source_receipt.get("images_tree_sha256"), "source_receipt.images_tree_sha256"
     )
     if declared_source_tree != images_tree_sha256:
-        raise BDD100KFinalizeError(
-            "source receipt image tree hash disagrees with frozen manifest"
-        )
+        raise BDD100KFinalizeError("source receipt image tree hash disagrees with frozen manifest")
 
     archives = _archive_material(source_receipt)
     source_archives = source_receipt.get("source_archives")
@@ -357,10 +361,9 @@ def _validate_prepared_evidence(
 def load_frozen_image_manifest_from_mapping(value: Mapping[str, Any]) -> dict[str, Any]:
     """Validate an in-memory frozen manifest without relying on a file path."""
 
-    # Importing the public validator here avoids opening the labels and keeps
-    # this module usable with synthetic evidence in unit tests.
-    from scripts.run_bdd100k_detection_benchmark import validate_frozen_image_manifest
-
+    # The public validator only checks the hash-bound image inventory; it never
+    # opens labels or media.  Import it at module load with the same direct-
+    # script fallback as the CLI so this helper works in both invocation modes.
     return validate_frozen_image_manifest(value)
 
 
