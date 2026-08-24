@@ -277,6 +277,13 @@ def _validate_prepared_evidence(
     split_manifest_sha256 = _require_sha(
         validated_image_manifest["manifest_sha256"], "manifest_sha256"
     )
+    declared_source_tree = _require_sha(
+        source_receipt.get("images_tree_sha256"), "source_receipt.images_tree_sha256"
+    )
+    if declared_source_tree != images_tree_sha256:
+        raise BDD100KFinalizeError(
+            "source receipt image tree hash disagrees with frozen manifest"
+        )
 
     archives = _archive_material(source_receipt)
     source_archives = source_receipt.get("source_archives")
@@ -309,6 +316,23 @@ def _validate_prepared_evidence(
         if labels_sha256 is not None and inventory_hash != labels_sha256:
             raise BDD100KFinalizeError("source receipt and split inventory label hashes disagree")
         labels_sha256 = inventory_hash
+        inventory_bytes = labels.get("bytes")
+        if (
+            isinstance(inventory_bytes, bool)
+            or not isinstance(inventory_bytes, int)
+            or inventory_bytes < 1
+        ):
+            raise BDD100KFinalizeError("split inventory label byte count is invalid")
+        source_bytes = source_receipt.get("labels_bytes")
+        if source_bytes is not None and source_bytes != inventory_bytes:
+            raise BDD100KFinalizeError(
+                "source receipt and split inventory label byte counts disagree"
+            )
+        frame_count = labels.get("frame_count")
+        if frame_count != image_count:
+            raise BDD100KFinalizeError(
+                "split inventory label frame count disagrees with frozen manifest"
+            )
     labels_sha256 = _require_sha(labels_sha256, "ground_truth_sha256")
     expected_content = _expected_content_sha256(
         image_count=image_count, images_tree_sha256=images_tree_sha256, labels_sha256=labels_sha256

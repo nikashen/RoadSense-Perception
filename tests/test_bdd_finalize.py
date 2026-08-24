@@ -60,6 +60,7 @@ def _evidence() -> dict[str, object]:
         "source_archives": archives,
         "images_tree_sha256": frozen_image["images_tree_sha256"],
         "labels_sha256": labels_sha,
+        "labels_bytes": 1,
         "content_sha256": content_sha,
     }
     dataset = {
@@ -81,7 +82,7 @@ def _evidence() -> dict[str, object]:
         "split": "val",
         "image_count": 1,
         "images_tree_sha256": frozen_image["images_tree_sha256"],
-        "labels": {"sha256": labels_sha, "bytes": 1},
+        "labels": {"sha256": labels_sha, "bytes": 1, "frame_count": 1},
     }
     mapping = {"person": "pedestrian", "stop sign": None}
     model = {
