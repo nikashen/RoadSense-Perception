@@ -19,7 +19,9 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-  "numpy>=1.26,<3",
+  # NumPy 2.5's stubs use PEP 695 syntax while this package type-checks
+  # against its lowest supported Python (3.10).
+  "numpy>=1.26,<2.5",
   "pydantic>=2.8,<3",
 ]
 
