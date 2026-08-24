@@ -26,3 +26,18 @@ receipt bound into the evaluation report,
 an independent evaluator, complete runtime evidence, and a sanitized report
 whose hash binds all of the above. Failure or missing authorization must remain
 visible instead of being converted into a positive result.
+
+## BDD100K Detection lane
+
+The first formal lane is intentionally narrower than the rest of the
+multi-task roadmap: BDD100K Detection 2020 `val`, using the official devkit
+commit `9ac17c6c7c51d2fc83065fccd707cd5b1882a293`. The complete preparation,
+inference, evaluator, and finalization contract is documented in
+[BDD100K benchmark](BDD100K_BENCHMARK.md).
+
+Until a real source receipt, frozen image manifest, model/inference receipts,
+and two matching official evaluator receipts exist, the public state remains
+`benchmark_claim_available=false`. The checked-in COCO YOLO11n adapter is an
+out-of-domain baseline; it is not described as BDD-trained. A local `val`
+receipt is not a hidden-test leaderboard result, and it does not authorize
+claims about tracking or segmentation.

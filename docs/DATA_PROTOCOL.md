@@ -14,13 +14,22 @@ The strict loader rejects duplicate JSON keys, non-finite numbers, invalid UTF-8
 unknown fields, duplicate tasks, all-zero placeholder hashes, and an unauthorized
 frozen state.
 
-## BDD100K plan
+## BDD100K Detection 2020 validation lane
 
 BDD100K is an operator-downloaded, non-redistributed input. Its image,
 annotation, and commercial-use terms must be reviewed against the current
-upstream notice. A local preparation script will later record archive hashes,
-file inventory, sequence IDs, and split membership. Random frame-level splits
-are prohibited because they leak adjacent frames across evaluation boundaries.
+upstream notice. The current formal lane is the official Detection 2020
+`val` split (10,000 images), prepared by
+`scripts/prepare_bdd100k_detection.py` and evaluated with the pinned official
+devkit commit documented in [BDD100K benchmark](BDD100K_BENCHMARK.md). The
+preparation receipt records archive SHA-256, file inventory, label hash, and
+the explicit local licence acknowledgement. It never downloads or publishes
+the data.
+
+This detection lane is not a tracking/segmentation split and is not a hidden
+test leaderboard submission. Any future video task must retain sequence/video
+disjoint boundaries; random frame-level splits are prohibited because they
+leak adjacent frames across evaluation boundaries.
 
 No dataset byte is needed for the current Pages fixture.
 

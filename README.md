@@ -124,6 +124,22 @@ The intended protocol is sequence/video-disjoint Train/Development/Final:
 Until that chain exists, `evaluation_authorized=false` and `frozen=false` are
 the only valid public state.
 
+### Formal BDD100K Detection lane
+
+The repository now contains a separate, fail-closed runner for the official
+BDD100K Detection 2020 `val` split. It freezes the image inventory, runs
+inference without exposing labels, invokes the pinned official devkit in an
+isolated interpreter, and requires two matching evaluator receipts before a
+sanitized benchmark receipt can be built. The current adapter is explicitly a
+COCO-pretrained YOLO11n cross-domain baseline; it does not claim BDD training
+and it never fabricates the `rider` or `traffic sign` classes.
+
+See [BDD100K benchmark](docs/BDD100K_BENCHMARK.md) for the exact commands and
+licence boundary. No BDD images, labels, predictions, private weights, or
+absolute paths are committed. Until a licensed operator supplies the official
+data and the finalizer succeeds, this repository has no public BDD metric
+claim; the Pages workbench remains the deterministic fixture.
+
 The repository now includes an explicit local-data entry point for that plan.
 `roadsense evaluate-local` consumes a strict sequence-aware JSON spec and
 operator-provided frame/mask files only; it never downloads data.  Missing,
@@ -195,4 +211,5 @@ See [Architecture](docs/ARCHITECTURE.md), [Data Protocol](docs/DATA_PROTOCOL.md)
 [Model Artifact Protocol](docs/MODEL_ARTIFACT_PROTOCOL.md),
 [API Protocol](docs/API_PROTOCOL.md), [Security](docs/SECURITY.md),
 [Publication Boundary](docs/PUBLICATION_BOUNDARY.md),
-[Publishing](docs/PUBLISHING.md), and the Chinese [resume case](docs/RESUME_PROJECT_ZH.md).
+[Publishing](docs/PUBLISHING.md), the [BDD100K benchmark](docs/BDD100K_BENCHMARK.md),
+and the Chinese [resume case](docs/RESUME_PROJECT_ZH.md).

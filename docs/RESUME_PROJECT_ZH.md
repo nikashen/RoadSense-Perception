@@ -20,8 +20,8 @@
 - 设计多任务 2D 视觉感知平台，统一检测、语义分割与多目标跟踪输出，固定原始分辨率坐标、帧序列和类别本体，避免各任务结果无法对齐。
 - 实现确定性 IoU 关联与 track aging，显式统计漏检、误检、ID switch，并为检测 AP、分割混淆矩阵和跟踪 MOTA 建立独立评测协议。
 - 搭建 FastAPI + GitHub Pages Perception Workbench，支持逐帧回放、检测框、语义区域、轨迹尾迹和对象检查；页面明确区分 fixture 证据与 benchmark 结论。
-- 建立严格 JSON、数据集/模型 manifest、SHA-256、原子报告和 fail-closed publication gate；本地评测在授权或冻结状态下强制绑定模型工件收据，为后续 BDD100K 真实评测保留可审计证据链。
-- 编写独立 COCO8+YOLO11n ONNX 本地评测 runner，冻结 letterbox/阈值/NMS/CPUExecutionProvider，产出可复核的模型、数据、依赖锁和报告哈希；四图结果仅作为 development smoke evidence，不宣称官方 COCO benchmark。
+- 建立严格 JSON、数据集/模型 manifest、SHA-256、原子报告和 fail-closed publication gate；新增 BDD100K Detection 2020 val 的官方 devkit 评测闭环（数据准备、冻结清单、无标签推理、双次独立 evaluator、脱敏 receipt），但在真实许可数据和两次官方结果完成前不发布 BDD 指标。
+- 编写独立 COCO8+YOLO11n ONNX 本地评测 runner，冻结 letterbox/阈值/NMS/CPUExecutionProvider，产出可复核的模型、数据、依赖锁和报告哈希；该权重在 BDD lane 中只作为明确标注的 COCO 跨域 baseline，四图结果仅作为 development smoke evidence，不宣称官方 COCO 或 BDD benchmark。
 - 设计与模型框架解耦的适配器协议，冻结输入预处理、输出本体、运行时版本和量化/校准元数据，便于后续接入 ONNX Runtime、Torch 或 TensorRT 而不污染 Pages 路径。
 
 ## 面试深挖点
@@ -36,4 +36,4 @@
 
 ## 证据边界
 
-当前项目不能宣称通用检测精度、跟踪质量、实时 FPS、自动驾驶安全或生产部署能力。完成 BDD100K 真实评测前，简历应写“多任务视觉感知工程平台”，不要写成“自动驾驶感知模型 SOTA”。
+当前项目不能宣称通用检测精度、跟踪质量、实时 FPS、自动驾驶安全或生产部署能力。完成并公开 BDD100K 官方 receipt 前，简历应写“多任务视觉感知工程平台与可审计评测链路”，不要写成“自动驾驶感知模型 SOTA”。

@@ -13,15 +13,21 @@ fixture, wheel/sdist, architecture and protocol documents, and explicit
 Do not create a benchmark release until all of the following are present:
 
 1. Current dataset terms reviewed and recorded.
-2. Archive/tree hashes and sequence-aware split manifest.
-3. Model artifact manifest with checkpoint hash and license, plus a verified
-   receipt bound into the local evaluation report.
-4. Frozen Development configuration and independent Final evaluator receipt.
-5. Reproducible runtime measurements with device and dependency versions. The
+2. For the BDD lane, the official 10,000-image Detection 2020 `val` bundle
+   passed `scripts/prepare_bdd100k_detection.py` with the explicit licence
+   acknowledgement and official package checksums.
+3. Archive/tree/ground-truth hashes and a frozen image manifest are bound to
+   the model, ontology adapter, inference configuration, and predictions.
+4. Two independent runs of the pinned official BDD devkit completed with
+   finite metrics, distinct run IDs, and byte-for-byte identical aggregate
+   metrics. See [BDD100K benchmark](BDD100K_BENCHMARK.md).
+5. A sanitized receipt passes
+   `scripts/verify_bdd100k_detection_benchmark.py`; it contains no local
+   paths, raw predictions, labels, images, or private weights.
+6. Reproducible runtime measurements with device and dependency versions. The
    fixture `roadsense.runtime-audit/v1` record described in
-   [Runtime audit](RUNTIME_AUDIT.md) is a plumbing diagnostic only; a benchmark
-   release requires a separately authorized real-model record.
-6. Sanitized aggregate report whose hashes bind the inputs above.
+   [Runtime audit](RUNTIME_AUDIT.md) is a plumbing diagnostic only; it cannot
+   substitute for a real-model record.
 7. Release assets pass `twine check`, fresh-wheel smoke, and Pages verification.
 
 The Pages artifact contains a generated `demo.json` from the same deterministic
@@ -48,3 +54,8 @@ authorized by this checklist alone.
 Raw BDD100K images, videos, labels, private weights, and local paths never go
 into GitHub, Pages, or release assets by default. The publication gate must
 remain fail-closed when authorization or provenance is incomplete.
+
+The current repository has the BDD runner and offline contract tests, but no
+public BDD benchmark receipt until an operator supplies the licensed official
+data and the two evaluator runs. A synthetic fixture or COCO8 result is never
+promoted to a BDD claim.
