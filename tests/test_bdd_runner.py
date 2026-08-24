@@ -314,6 +314,35 @@ def test_evaluate_rejects_output_collision_with_inputs(tmp_path: Path) -> None:
         )
 
 
+def test_evaluate_accepts_pretty_json_stdout_fallback(tmp_path: Path) -> None:
+    _image_root, manifest_path, _frozen = _manifest(tmp_path, names=("a.jpg",))
+    gt = tmp_path / "gt.json"
+    gt.write_text("[]", encoding="utf-8")
+    prediction = tmp_path / "pred.json"
+    prediction.write_text(
+        json.dumps([{"name": "a.jpg", "labels": [], "attributes": {}}]), encoding="utf-8"
+    )
+    package = tmp_path / "bdd100k" / "eval"
+    package.mkdir(parents=True)
+    (tmp_path / "bdd100k" / "__init__.py").write_text("", encoding="utf-8")
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "run.py").write_text(
+        "import json; print(json.dumps({'mAP': 0.25}, indent=2))\n", encoding="utf-8"
+    )
+    receipt = run_evaluation(
+        ground_truth=gt,
+        predictions=prediction,
+        output_dir=tmp_path / "eval",
+        evaluator_python=sys.executable,
+        evaluator_cwd=tmp_path,
+        image_manifest=manifest_path,
+    )
+    assert receipt["status"] == "ok"
+    assert receipt["evaluator"]["metrics"] == {"mAP": 0.25}
+    artifact = tmp_path / "eval" / receipt["evaluator"]["result"]["path"]
+    assert artifact.read_text(encoding="utf-8").lstrip().startswith("{")
+
+
 def test_evaluate_does_not_follow_preexisting_stream_symlink(tmp_path: Path) -> None:
     _image_root, manifest_path, _frozen = _manifest(tmp_path, names=("a.jpg",))
     gt = tmp_path / "gt.json"

@@ -46,9 +46,15 @@ from roadsense.bdd_benchmark import (
     build_bdd100k_detection_receipt,
 )
 from roadsense.json_io import canonical_sha256, load_strict_json, write_json_atomic
-from scripts.run_bdd100k_detection_benchmark import (
-    FrozenManifestError,
-)
+
+try:
+    # Editable installs and pytest expose the repository root as a package
+    # parent.  Direct ``python scripts/finalize_...py`` execution instead
+    # places only ``scripts/`` on ``sys.path``; mirror the runner's sibling
+    # fallback so the documented command works in both modes.
+    from scripts.run_bdd100k_detection_benchmark import FrozenManifestError
+except ModuleNotFoundError:  # pragma: no cover - exercised by direct script CLI
+    from run_bdd100k_detection_benchmark import FrozenManifestError  # type: ignore[no-redef]
 
 FINALIZE_SCHEMA = "roadsense.bdd100k-detection-finalize/v1"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
