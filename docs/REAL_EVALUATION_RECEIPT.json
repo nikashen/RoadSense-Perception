@@ -1,0 +1,75 @@
+{
+  "schema_version": "roadsense.sanitized-real-evaluation/v1",
+  "receipt_scope": "aggregate_provenance_only",
+  "source_layout": "reports/coco8_real",
+  "evidence": {
+    "evidence_level": "development",
+    "evaluation_authorized": false,
+    "frozen": false,
+    "benchmark_claim_available": false
+  },
+  "dataset": {
+    "name": "Ultralytics COCO8 development subset",
+    "source_url": "https://github.com/ultralytics/assets/releases/download/v0.0.0/coco8.zip",
+    "archive_sha256": "54c67fe9ef88313e021ec0e92b73c200167bb0a86633e8df8658d832cca828c9",
+    "archive_size_bytes": 443158,
+    "tree_sha256": "e64162482a33e1f45bfe3e7c5092554d1d3cf924b3a8d622b1b51738f3abbcef",
+    "manifest_sha256": "40e197aec9118253c7347a56a3f5a3c740ca4ba755f9661dc781cda2fc5e2eb2",
+    "spec_sha256": "dd1e1a3a2431ec06ed41100eb55fba4675b834bfef172c102424c8bb04c12194",
+    "split": "val",
+    "image_count": 4,
+    "sequence_ids": [
+      "coco8-val-000000000036",
+      "coco8-val-000000000042",
+      "coco8-val-000000000049",
+      "coco8-val-000000000061"
+    ],
+    "license_review": "Operator-provided local input; review current COCO terms and Ultralytics AGPL-3.0 terms before sharing."
+  },
+  "model": {
+    "artifact_id": "ultralytics-yolo11n-onnx-ultralytics-8.3.237",
+    "artifact_sha256": "634279b40c07c6391472c51ad45b81ebc48706a9a1fe72dd3396322acd0c053b",
+    "artifact_size_bytes": 10930182,
+    "manifest_sha256": "7b85e4c55d9177a68099314874d98300185c17de2fbcc150a6c3193651416a1d",
+    "dependency_lock_sha256": "bbc81342f4dd1da0522aceed7840c962b0b8c0f0ce57dbfdb8e2f5baa840f36c",
+    "format": "onnx",
+    "framework": "ultralytics",
+    "framework_version": "8.3.237",
+    "backend": "onnxruntime",
+    "backend_version": "1.23.2",
+    "license_id": "AGPL-3.0"
+  },
+  "runtime": {
+    "python": "3.10.2",
+    "numpy": "1.26.4",
+    "onnxruntime": "1.23.2",
+    "providers": ["CPUExecutionProvider"],
+    "input": {
+      "name": "images",
+      "shape": ["batch", 3, "height", "width"],
+      "size": [640, 640],
+      "preprocessing": "RGB letterbox, bilinear resize, pad 114, NCHW float32 / 255"
+    },
+    "output": {
+      "name": "output0",
+      "shape": ["batch", 84, "anchors"]
+    }
+  },
+  "protocol": {
+    "id": "roadsense.detection-ap/v1",
+    "iou_threshold": 0.5,
+    "score_threshold": 0.25,
+    "nms_iou": 0.7,
+    "max_detections": 300
+  },
+  "metrics": {
+    "compact_ap": 0.65,
+    "precision": 0.6923076923076923,
+    "recall": 0.5294117647058824,
+    "true_positives": 9,
+    "false_positives": 4,
+    "false_negatives": 8
+  },
+  "report_id": "8163e7d374440aa2",
+  "claim_boundary": "Development evidence on four COCO8 validation images. The compact AP is not COCO mAP, and this receipt is not an official benchmark, production FPS measurement, or generalized model-quality claim."
+}

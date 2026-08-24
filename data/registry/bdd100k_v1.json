@@ -1,0 +1,33 @@
+{
+  "schema_version": "roadsense.source-registry/v1",
+  "dataset_id": "bdd100k_v1",
+  "display_name": "BDD100K",
+  "upstream_url": "https://www.vis.xyz/bdd100k/",
+  "license_review_status": "operator_review_required",
+  "redistribution": "prohibited_by_default",
+  "tasks": [
+    "detection",
+    "segmentation",
+    "tracking"
+  ],
+  "source_receipt": {
+    "archive_sha256": null,
+    "tree_sha256": null,
+    "received_at_utc": null,
+    "operator": null
+  },
+  "split_policy": {
+    "unit": "video_sequence",
+    "development": "fixed sequence list recorded after local preparation",
+    "final": "held-out sequence list recorded before final inference",
+    "random_frame_split": false
+  },
+  "public_artifacts": [
+    "source receipt",
+    "archive and tree hashes",
+    "file inventory",
+    "sequence-aware split manifest",
+    "sanitized aggregate metrics"
+  ],
+  "notes": "Planning registry only. Null receipts mean no local dataset has been accepted or evaluated. Dataset bytes, labels, and videos must remain outside Git and releases. Confirm current upstream terms before any run."
+}

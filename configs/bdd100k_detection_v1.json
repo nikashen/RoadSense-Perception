@@ -1,0 +1,22 @@
+{
+  "schema_version": "roadsense.evaluation-config/v1",
+  "config_id": "bdd100k_detection_v1",
+  "task": "detection",
+  "dataset_registry": "data/registry/bdd100k_v1.json",
+  "split": "development",
+  "sequence_disjoint": true,
+  "input": {
+    "width": 320,
+    "height": 320,
+    "preserve_aspect_ratio": true,
+    "coordinate_space": "original_xyxy"
+  },
+  "protocol": "roadsense.detection-ap/v1",
+  "iou_thresholds": [
+    0.5
+  ],
+  "score_threshold": 0.05,
+  "model_artifact": null,
+  "evaluation_authorized": false,
+  "notes": "Template only. Select thresholds and freeze the model artifact on Development; never report this config as a completed benchmark."
+}

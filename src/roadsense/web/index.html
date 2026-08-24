@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="RoadSense Perception Lab — v0.2.0.dev0 evidence-first fixture with local artifact, evaluation, and runtime audit contracts."
+    />
+    <meta name="theme-color" content="#071411" />
+    <title>RoadSense Perception Lab · v0.2.0.dev0</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#workspace">Skip to perception workspace</a>
+
+    <header class="site-header">
+      <a class="brand" href="#lab" aria-label="RoadSense Perception Lab home">
+        <span class="brand-mark" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </span>
+        <span class="brand-copy">
+          <strong>RoadSense</strong>
+          <span>Perception Lab</span>
+        </span>
+      </a>
+
+      <nav class="site-nav" aria-label="Primary navigation">
+        <button
+          class="nav-button is-active"
+          type="button"
+          data-view="lab"
+          aria-current="page"
+          aria-controls="lab-view"
+        >
+          Lab
+        </button>
+        <button class="nav-button" type="button" data-view="evidence" aria-controls="evidence-view">
+          Evidence
+        </button>
+      </nav>
+
+      <div class="header-status" role="status" aria-live="polite">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span id="data-source-label">Loading fixture…</span>
+      </div>
+    </header>
+
+    <main id="workspace" tabindex="-1">
+      <section class="view is-active" id="lab-view" data-view-panel="lab">
+        <div class="intro-row">
+          <div>
+            <p class="eyebrow">2D ROAD PERCEPTION · V0.2.0 DEV · CAPABILITY PREVIEW</p>
+            <h1>Inspect the scene, frame by frame.</h1>
+            <p class="intro-copy">
+              A deterministic sequence for testing detection, semantic segmentation, and
+              multi-object tracking interfaces—without presenting fixture values as model results.
+            </p>
+          </div>
+          <div class="truth-badge" role="note" aria-label="Fixture disclaimer">
+            <span>DEMO CONTRACT</span>
+            <strong>FIXTURE ONLY</strong>
+          </div>
+        </div>
+
+        <div class="lab-grid">
+          <section class="stage-card panel" aria-labelledby="scene-title">
+            <div class="panel-header stage-header">
+              <div>
+                <p class="section-kicker">SEQUENCE VIEWER</p>
+                <h2 id="scene-title">Urban approach · Scene A</h2>
+              </div>
+              <div class="frame-readout" aria-live="polite">
+                <span id="frame-counter">FRAME 01 / 24</span>
+                <strong id="time-counter">00:00.000</strong>
+              </div>
+            </div>
+
+            <div class="canvas-shell" id="canvas-shell" aria-busy="true">
+              <canvas
+                id="scene-canvas"
+                width="960"
+                height="540"
+                role="img"
+                tabindex="0"
+                aria-describedby="scene-description"
+                aria-label="Deterministic road scene with perception overlays"
+              >
+                Deterministic road-scene fixture. Use the object list for a text representation.
+              </canvas>
+              <p class="sr-only" id="scene-description">
+                Focus the scene and use the left and right arrow keys to step frames, or Space to
+                play and pause. Select an object from the frame inventory for track details.
+              </p>
+              <div class="canvas-corner-note" aria-hidden="true">
+                <span class="pulse-dot"></span>
+                DETERMINISTIC FIXTURE
+              </div>
+              <div class="canvas-loading" id="canvas-loading" role="status">
+                <span class="loader" aria-hidden="true"></span>
+                Preparing scene contract
+              </div>
+            </div>
+
+            <div class="transport" role="group" aria-label="Playback controls">
+              <button class="icon-button" id="reset-button" type="button" title="Reset (Home)">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4.8 8.2A8 8 0 1 1 4 14" />
+                  <path d="M4.8 3.8v4.4h4.4" />
+                </svg>
+                <span class="sr-only">Reset sequence</span>
+              </button>
+              <button class="icon-button" id="previous-button" type="button" title="Previous frame (←)">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M6 5v14M18 6l-8 6 8 6V6Z" />
+                </svg>
+                <span class="sr-only">Previous frame</span>
+              </button>
+              <button class="play-button" id="play-button" type="button" aria-pressed="false">
+                <svg class="play-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m9 6 9 6-9 6V6Z" />
+                </svg>
+                <svg class="pause-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M8 6v12M16 6v12" />
+                </svg>
+                <span id="play-label">Play</span>
+              </button>
+              <button class="icon-button" id="next-button" type="button" title="Next frame (→)">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M18 5v14M6 6l8 6-8 6V6Z" />
+                </svg>
+                <span class="sr-only">Next frame</span>
+              </button>
+
+              <div class="timeline-wrap">
+                <input
+                  id="timeline"
+                  class="timeline"
+                  type="range"
+                  min="0"
+                  max="23"
+                  value="0"
+                  step="1"
+                  aria-label="Sequence frame"
+                />
+                <div class="timeline-meta" aria-hidden="true">
+                  <span>START</span>
+                  <span id="timeline-end">2.3 SEC</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="frame-strip" id="frame-strip" role="group" aria-label="Frame list"></div>
+          </section>
+
+          <aside class="inspector" aria-label="Perception inspector">
+            <section class="panel control-panel" aria-labelledby="layers-title">
+              <div class="panel-header compact">
+                <div>
+                  <p class="section-kicker">VIEW CONTROLS</p>
+                  <h2 id="layers-title">Perception layers</h2>
+                </div>
+                <button class="text-button" id="layers-reset" type="button">Reset</button>
+              </div>
+
+              <div class="layer-list">
+                <label class="switch-row">
+                  <span class="layer-key detection-key" aria-hidden="true"></span>
+                  <span class="switch-copy">
+                    <strong>Detections</strong>
+                    <small>Boxes + class confidence</small>
+                  </span>
+                  <input id="detection-toggle" type="checkbox" checked />
+                  <span class="switch" aria-hidden="true"></span>
+                </label>
+                <label class="switch-row">
+                  <span class="layer-key segmentation-key" aria-hidden="true"></span>
+                  <span class="switch-copy">
+                    <strong>Segmentation</strong>
+                    <small>Semantic region masks</small>
+                  </span>
+                  <input id="segmentation-toggle" type="checkbox" checked />
+                  <span class="switch" aria-hidden="true"></span>
+                </label>
+                <label class="switch-row">
+                  <span class="layer-key tracking-key" aria-hidden="true"></span>
+                  <span class="switch-copy">
+                    <strong>Track history</strong>
+                    <small>Fixture trajectory trails</small>
+                  </span>
+                  <input id="tracking-toggle" type="checkbox" checked />
+                  <span class="switch" aria-hidden="true"></span>
+                </label>
+              </div>
+
+              <div class="threshold-control">
+                <div class="range-label">
+                  <label for="confidence-range">Confidence threshold</label>
+                  <output id="confidence-output" for="confidence-range">0.50</output>
+                </div>
+                <input
+                  id="confidence-range"
+                  type="range"
+                  min="0.30"
+                  max="0.95"
+                  step="0.05"
+                  value="0.50"
+                />
+                <div class="range-scale" aria-hidden="true"><span>0.30</span><span>0.95</span></div>
+              </div>
+            </section>
+
+            <section class="panel diagnostics-panel" aria-labelledby="diagnostics-title">
+              <div class="panel-header compact">
+                <div>
+                  <p class="section-kicker">FRAME DIAGNOSTICS</p>
+                  <h2 id="diagnostics-title">Observable state</h2>
+                </div>
+                <span class="non-metric-tag">NOT A BENCHMARK</span>
+              </div>
+              <div class="metric-grid">
+                <div class="metric-tile">
+                  <span>Visible boxes</span>
+                  <strong id="visible-count">—</strong>
+                  <small>above threshold</small>
+                </div>
+                <div class="metric-tile">
+                  <span>Active tracks</span>
+                  <strong id="track-count">—</strong>
+                  <small>in this fixture frame</small>
+                </div>
+                <div class="metric-tile">
+                  <span>Road coverage</span>
+                  <strong id="coverage-count">—</strong>
+                  <small>canvas-area diagnostic</small>
+                </div>
+                <div class="metric-tile">
+                  <span>Max box IoU</span>
+                  <strong id="iou-count">—</strong>
+                  <small>within-frame overlap</small>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel objects-panel" aria-labelledby="objects-title">
+              <div class="panel-header compact object-heading">
+                <div>
+                  <p class="section-kicker">FRAME INVENTORY</p>
+                  <h2 id="objects-title">Objects</h2>
+                </div>
+                <span class="object-count" id="object-count" aria-live="polite">0 shown</span>
+              </div>
+              <div class="object-list" id="object-list" role="group" aria-label="Objects in current frame"></div>
+              <div class="object-detail" id="object-detail" aria-live="polite"></div>
+            </section>
+          </aside>
+        </div>
+      </section>
+
+      <section class="view" id="evidence-view" data-view-panel="evidence" hidden>
+        <div class="evidence-hero">
+          <div>
+            <p class="eyebrow">EVIDENCE BOUNDARY</p>
+            <h1>Know exactly what this demo proves.</h1>
+            <p>
+              This page separates interface evidence from model evidence. The included scene is
+              procedural and repeatable; it is not an inference result or a dataset benchmark.
+            </p>
+          </div>
+          <div class="evidence-stamp" role="note">
+            <span>PUBLIC DEMO STATUS</span>
+            <strong>FIXTURE ONLY</strong>
+            <b>NO BENCHMARK CLAIM</b>
+          </div>
+        </div>
+
+        <div class="evidence-grid">
+          <article class="panel evidence-card contract-card">
+            <p class="section-kicker">DEMO MANIFEST</p>
+            <h2>Deterministic render contract</h2>
+            <p>
+              Localhost mode first loads <code>/api/v1/demo</code> and validates its evidence flags;
+              if no API is running, it tries the versioned <code>demo.json</code> replay before the
+              emergency in-memory fallback. GitHub Pages uses the same replay path and marks the
+              fallback explicitly instead of hiding a failed load.
+            </p>
+            <dl class="manifest-list">
+              <div><dt>Fixture ID</dt><dd id="manifest-id">—</dd></div>
+              <div><dt>Schema</dt><dd id="manifest-schema">—</dd></div>
+              <div><dt>Canvas</dt><dd id="manifest-canvas">—</dd></div>
+              <div><dt>Sequence</dt><dd id="manifest-frames">—</dd></div>
+              <div><dt>Active source</dt><dd id="manifest-source">—</dd></div>
+              <div><dt>Evidence level</dt><dd id="manifest-evidence">—</dd></div>
+              <div><dt>Evaluation</dt><dd id="manifest-authorization">—</dd></div>
+              <div><dt>Benchmark claim</dt><dd id="manifest-benchmark">—</dd></div>
+            </dl>
+            <button class="copy-button" id="copy-manifest" type="button" disabled>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="8" y="8" width="11" height="11" rx="2" />
+                <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
+              </svg>
+              <span>Copy manifest summary</span>
+            </button>
+          </article>
+
+          <article class="panel evidence-card proves-card">
+            <span class="evidence-icon yes" aria-hidden="true">✓</span>
+            <p class="section-kicker">SUPPORTED EVIDENCE</p>
+            <h2>What this demo verifies</h2>
+            <ul class="evidence-list checked-list">
+              <li>Playback, stepping, reset, and timeline state transitions</li>
+              <li>Overlay compositing and confidence-filter behavior</li>
+              <li>Detection, semantic region, and track-detail presentation contracts</li>
+              <li>Local API loading with an explicit static fallback</li>
+              <li>Responsive interaction at desktop and narrow mobile widths</li>
+            </ul>
+          </article>
+
+          <article class="panel evidence-card limits-card">
+            <span class="evidence-icon no" aria-hidden="true">×</span>
+            <p class="section-kicker">EXCLUDED CLAIMS</p>
+            <h2>What this demo does not prove</h2>
+            <ul class="evidence-list excluded-list">
+              <li>No mAP, mIoU, IDF1, HOTA, latency, or throughput result</li>
+              <li>No claim of generalization to public or private datasets</li>
+              <li>No real camera, model weight, checkpoint, or inference execution</li>
+              <li>No autonomous-driving safety or production-readiness claim</li>
+            </ul>
+          </article>
+
+          <article class="panel evidence-card capability-card" aria-labelledby="capabilities-title">
+            <p class="section-kicker">V0.2.0 DEV OPERATOR LANE</p>
+            <h2 id="capabilities-title">Attach auditable inputs locally</h2>
+            <p>
+              The public replay stays fixture-only. From a local checkout, the same contracts now
+              provide explicit seams for a verified model artifact, sequence-aware evaluation, and
+              runtime diagnostics—without downloading data or loading a model in this page.
+            </p>
+            <ul class="capability-list">
+              <li>
+                <span class="capability-index">01</span>
+                <span class="capability-copy">
+                  <strong>Artifact audit</strong>
+                  <small><code>roadsense verify-artifact</code> · local manifest + hash receipt</small>
+                </span>
+                <span class="capability-state">LOCAL</span>
+              </li>
+              <li>
+                <span class="capability-index">02</span>
+                <span class="capability-copy">
+                  <strong>Local evaluation</strong>
+                  <small><code>roadsense evaluate-local</code> · split-aware metrics</small>
+                </span>
+                <span class="capability-state">LOCAL</span>
+              </li>
+              <li>
+                <span class="capability-index">03</span>
+                <span class="capability-copy">
+                  <strong>Runtime audit</strong>
+                  <small><code>roadsense benchmark</code> · fixture pipeline diagnostics</small>
+                </span>
+                <span class="capability-state">DIAGNOSTIC</span>
+              </li>
+            </ul>
+            <p class="capability-note" role="note">
+              These commands emit receipts and reports for review; they do not turn this replay
+              into a benchmark claim.
+            </p>
+          </article>
+
+          <article class="panel evidence-card path-card">
+            <p class="section-kicker">EVIDENCE LADDER</p>
+            <h2>Path from fixture to benchmark</h2>
+            <ol class="evidence-path">
+              <li class="is-current">
+                <span>01</span>
+                <div><strong>Interface fixture</strong><small>Current public demo</small></div>
+              </li>
+              <li>
+                <span>02</span>
+                <div><strong>Verified artifact</strong><small>Manifest + checkpoint receipt</small></div>
+              </li>
+              <li>
+                <span>03</span>
+                <div><strong>Local evaluation</strong><small>Sequence split + metric protocol</small></div>
+              </li>
+              <li>
+                <span>04</span>
+                <div><strong>Publishable claim</strong><small>Auditable report + limitations</small></div>
+              </li>
+            </ol>
+          </article>
+        </div>
+
+        <div class="evidence-footer-note" role="note">
+          <strong>RoadSense evidence rule:</strong>
+          Diagnostic fixture values describe only the current generated frame. They must never be
+          cited as model quality, dataset performance, or production latency.
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <span>RoadSense Perception · 2D perception contract v0.2.0.dev0 capability preview</span>
+      <span>Detection · Segmentation · Tracking</span>
+    </footer>
+
+    <noscript>
+      <div class="noscript">JavaScript is required to render the deterministic scene fixture.</div>
+    </noscript>
+  </body>
+</html>

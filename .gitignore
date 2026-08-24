@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+.venv/
+.venv-ort/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local datasets, weights, runs, and reports
+.cache/
+data/raw/*
+!data/raw/README.md
+data/processed/
+weights/
+artifacts/
+reports/
+runs/
+logs/
+site/
+*.onnx
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.engine
+*.pkl
+*.pickle
+
+# Local browser/test captures
+.tmp/
+.playwright/
+test-results/
+
+# Credentials and local environment material
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+credentials*.json
+secrets*.json
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

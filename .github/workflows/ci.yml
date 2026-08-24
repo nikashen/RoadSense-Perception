@@ -1,0 +1,119 @@
+name: RoadSense CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: roadsense-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev,serve]"
+      - run: python -m pip check
+      - run: python -m pytest
+      - run: python -m ruff check src scripts tests
+      - run: python -m ruff format --check src scripts tests
+      - run: python -m mypy src/roadsense
+      - run: python -m compileall -q src scripts tests
+      - run: node --check src/roadsense/web/app.js
+      - run: python scripts/build_pages.py --output dist/pages
+      - run: python scripts/verify_pages.py dist/pages
+      - run: python -m build
+      - shell: bash
+        run: |
+          set -euo pipefail
+          python -m venv /tmp/roadsense-wheel-smoke
+          wheel="$(find dist -maxdepth 1 -name '*.whl' -print -quit)"
+          test -n "$wheel"
+          /tmp/roadsense-wheel-smoke/bin/python -m pip install "${wheel}[serve]"
+          /tmp/roadsense-wheel-smoke/bin/python -m pip install "fastapi>=0.115,<1" "uvicorn[standard]>=0.30,<1"
+          /tmp/roadsense-wheel-smoke/bin/python -m pip install "httpx2>=2,<3"
+          /tmp/roadsense-wheel-smoke/bin/python -m pip install "httpx>=0.28,<0.29"
+          /tmp/roadsense-wheel-smoke/bin/python -m pip check
+          /tmp/roadsense-wheel-smoke/bin/python -m roadsense smoke --json
+          /tmp/roadsense-wheel-smoke/bin/python -m roadsense evaluate-local --fixture --json
+          /tmp/roadsense-wheel-smoke/bin/python -m roadsense benchmark --iterations 1 --json > /tmp/roadsense-runtime.json
+          /tmp/roadsense-wheel-smoke/bin/python -c "from roadsense.api import create_app; from fastapi.testclient import TestClient; app=create_app(); client=TestClient(app); assert client.get('/').status_code == 200; assert client.get('/app.js').status_code == 200"
+      - shell: bash
+        run: |
+          set -euo pipefail
+          python -m venv /tmp/roadsense-sdist-smoke
+          sdist="$(find dist -maxdepth 1 -name '*.tar.gz' -print -quit)"
+          test -n "$sdist"
+          /tmp/roadsense-sdist-smoke/bin/python -m pip install "${sdist}[serve]"
+          /tmp/roadsense-sdist-smoke/bin/python -m pip install "httpx2>=2,<3"
+          /tmp/roadsense-sdist-smoke/bin/python -m pip install "httpx>=0.28,<0.29"
+          /tmp/roadsense-sdist-smoke/bin/python -m pip check
+          /tmp/roadsense-sdist-smoke/bin/python -m roadsense smoke --json
+          /tmp/roadsense-sdist-smoke/bin/python -m roadsense evaluate-local --fixture --json
+          /tmp/roadsense-sdist-smoke/bin/python -m roadsense benchmark --iterations 1 --json > /tmp/roadsense-sdist-runtime.json
+          /tmp/roadsense-sdist-smoke/bin/python -c "from roadsense.api import create_app; from fastapi.testclient import TestClient; app=create_app(); client=TestClient(app); assert client.get('/').status_code == 200; assert client.get('/app.js').status_code == 200"
+
+  fresh-wheel-windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install --upgrade pip build
+      - run: python -m build --sdist --wheel --outdir dist
+      - shell: pwsh
+        run: |
+          $venv = Join-Path $env:RUNNER_TEMP "roadsense-fresh"
+          python -m venv $venv
+          $python = Join-Path $venv "Scripts\python.exe"
+          & $python -m pip install --upgrade pip
+          $wheel = Get-ChildItem dist -Filter *.whl | Select-Object -First 1
+          & $python -m pip install "$($wheel.FullName)[serve]"
+          & $python -m pip install "httpx2>=2,<3"
+          & $python -m pip install "httpx>=0.28,<0.29"
+          & $python -m pip check
+          & $python -m roadsense smoke --json
+          & $python -m roadsense evaluate-local --fixture --json
+          $runtime = Join-Path $env:RUNNER_TEMP "roadsense-runtime.json"
+          & $python -m roadsense benchmark --iterations 1 --json > $runtime
+          & $python -c "from roadsense.api import create_app; from fastapi.testclient import TestClient; app=create_app(); client=TestClient(app); assert client.get('/').status_code == 200; assert client.get('/app.js').status_code == 200"
+
+  optional-runner-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev,vision]"
+      - run: python -m pip check
+      - run: python -m pytest tests/test_coco8_runner.py
+      - run: python -m ruff check scripts/run_coco8_onnx_eval.py tests/test_coco8_runner.py
