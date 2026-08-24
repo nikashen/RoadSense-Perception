@@ -581,6 +581,15 @@ def _evaluator_runtime_lock(
     for line in lines:
         if "==" in line:
             name, version = line.split("==", 1)
+            if (
+                not name
+                or not version
+                or any(ord(char) < 32 or ord(char) == 127 for char in name + version)
+                or any(char in name + version for char in ("/", "\\", ":", "@"))
+                or len(name) > 128
+                or len(version) > 128
+            ):
+                raise EvaluatorError("evaluator dependency probe returned an unsafe package value")
             packages[name] = version
     if not packages:
         raise EvaluatorError("evaluator dependency probe returned no packages")
