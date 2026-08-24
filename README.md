@@ -4,7 +4,7 @@ RoadSense-Perception is an evidence-first visual perception laboratory. The
 `v0.2` capability preview defines a clean, testable contract for 2D object
 detection, semantic segmentation, multi-object tracking, local-data evaluation,
 model-artifact verification, and runtime audit records. A later milestone can
-add point clouds, camera–LiDAR calibration, BEV features, and 3D tracking.
+add point clouds, camera-LiDAR calibration, BEV features, and 3D tracking.
 
 It is deliberately not presented as an autonomous-driving safety system. The
 Pages demo uses a procedural city-loop fixture so that the interface,
