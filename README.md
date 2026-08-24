@@ -11,6 +11,8 @@ Pages demo uses a procedural city-loop fixture so that the interface,
 frame state, overlays, and evidence boundary can be checked without silently
 downloading images or model weights.
 
+**Live demo:** <https://nikashen.github.io/RoadSense-Perception/>
+
 ## Current milestone: `0.2.0.dev0` capability preview
 
 The repository currently contains:
