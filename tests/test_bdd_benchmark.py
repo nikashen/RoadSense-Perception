@@ -14,6 +14,7 @@ from roadsense.bdd_benchmark import (
     BDD100K_DEVKIT_COMMIT,
     BDD100K_DEVKIT_ID,
     BDD100K_DEVKIT_REPOSITORY,
+    BDD100K_REQUIRED_EVALUATOR_PACKAGES,
     BDD100KBenchmarkReceiptError,
     BDD100KDetectionBenchmarkReceipt,
     build_bdd100k_detection_receipt,
@@ -67,10 +68,7 @@ def _payload() -> dict[str, object]:
             "config_sha256": _sha256("a"),
             "dependencies": {
                 "lock_sha256": _sha256("b"),
-                "packages": {
-                    "numpy": "1.26.4",
-                    "pydantic": "2.8.2",
-                },
+                "packages": dict(BDD100K_REQUIRED_EVALUATOR_PACKAGES),
             },
         },
         "evaluator_runs": [
@@ -123,7 +121,7 @@ def test_report_id_is_canonical_and_binds_every_receipt_field() -> None:
     assert isinstance(dependencies, dict)
     packages = dependencies["packages"]
     assert isinstance(packages, dict)
-    dependencies["packages"] = {"pydantic": packages["pydantic"], "numpy": packages["numpy"]}
+    dependencies["packages"] = {key: packages[key] for key in reversed(packages)}
     second = build_bdd100k_detection_receipt(reordered).model_dump(mode="json")
 
     assert first["report_id"] == second["report_id"]
@@ -208,6 +206,21 @@ def test_rejects_path_leakage_and_unsafe_dependency_versions() -> None:
     model["model_id"] = r"C:\Users\operator\weights\model.onnx"
     _rebind(payload)
     with pytest.raises(ValidationError, match="paths"):
+        validate_bdd100k_detection_receipt(payload)
+
+
+def test_public_receipt_requires_the_validated_evaluator_package_lock() -> None:
+    payload = _complete_payload()
+    evaluator = payload["evaluator"]
+    assert isinstance(evaluator, dict)
+    dependencies = evaluator["dependencies"]
+    assert isinstance(dependencies, dict)
+    packages = dependencies["packages"]
+    assert isinstance(packages, dict)
+    packages["pycocotools"] = "2.0.10"
+    _rebind(payload)
+
+    with pytest.raises(ValidationError, match="validated BDD100K evaluator lock"):
         validate_bdd100k_detection_receipt(payload)
 
     payload = _complete_payload()

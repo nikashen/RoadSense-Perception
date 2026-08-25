@@ -8,12 +8,15 @@ downloading BDD100K, loading its labels, or requiring model weights.
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
+
+import scripts.run_bdd100k_detection_benchmark as runner_module
 
 Image = pytest.importorskip("PIL.Image")
 
@@ -22,9 +25,12 @@ from roadsense.json_io import canonical_sha256, load_strict_json
 from scripts.run_bdd100k_detection_benchmark import (
     BDD100K_DETECTION_CATEGORIES,
     COCO_TO_BDD_CATEGORY,
+    DEVKIT_COMMIT,
     DEVKIT_MODULE,
     FrozenManifestError,
     _public_evaluator_command,
+    _validate_devkit_checkout,
+    _validate_evaluator_import_origin,
     _validate_prediction_document,
     build_prediction_document,
     detections_to_bdd_labels,
@@ -110,6 +116,72 @@ def test_formal_evaluation_requires_an_explicit_independent_role(tmp_path: Path)
             output_dir=tmp_path / "evaluation",
             image_manifest=manifest,
         )
+
+
+def test_formal_devkit_checkout_must_be_pinned_and_clean(tmp_path: Path) -> None:
+    checkout = tmp_path / "bdd100k-devkit"
+    (checkout / "bdd100k" / "eval").mkdir(parents=True)
+    (checkout / "bdd100k" / "eval" / "run.py").write_text("# evaluator\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q", str(checkout)], check=True)
+    subprocess.run(
+        ["git", "-C", str(checkout), "config", "user.email", "test@example.invalid"],
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(checkout), "config", "user.name", "RoadSense test"],
+        check=True,
+    )
+    subprocess.run(["git", "-C", str(checkout), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(checkout), "commit", "-qm", "fixture"], check=True)
+
+    with pytest.raises(ValueError, match=DEVKIT_COMMIT):
+        _validate_devkit_checkout(checkout)
+
+
+def test_devkit_checkout_probe_decodes_unicode_paths_as_utf8(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checkout = (tmp_path / "BDD100K-评测器").resolve()
+    entrypoint = checkout / "bdd100k" / "eval" / "run.py"
+    entrypoint.parent.mkdir(parents=True)
+    entrypoint.write_text("# pinned evaluator\n", encoding="utf-8")
+
+    monkeypatch.setattr(runner_module.shutil, "which", lambda _name: "git")
+
+    def fake_run(command: list[str], **kwargs: object) -> SimpleNamespace:
+        assert kwargs["encoding"] == "utf-8"
+        assert kwargs["errors"] == "strict"
+        arguments = command[3:]
+        if arguments == ["rev-parse", "--show-toplevel"]:
+            stdout = f"{checkout}\n"
+        elif arguments == ["rev-parse", "--verify", "HEAD"]:
+            stdout = f"{DEVKIT_COMMIT}\n"
+        elif arguments == ["status", "--porcelain=v1", "--untracked-files=all"]:
+            stdout = ""
+        else:
+            raise AssertionError(f"unexpected git probe: {arguments}")
+        return SimpleNamespace(returncode=0, stdout=stdout)
+
+    monkeypatch.setattr(runner_module.subprocess, "run", fake_run)
+    _validate_devkit_checkout(checkout)
+
+
+def test_formal_evaluator_import_must_resolve_inside_checkout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    checkout = (tmp_path / "checkout").resolve()
+    (checkout / "bdd100k" / "eval").mkdir(parents=True)
+    imported = (tmp_path / "site-packages" / "bdd100k" / "eval" / "run.py").resolve()
+    imported.parent.mkdir(parents=True)
+    imported.write_text("# unrelated install\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        runner_module.subprocess,
+        "run",
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=0, stdout=f"{imported}\n"),
+    )
+    with pytest.raises(ValueError, match="import bdd100k from evaluator-cwd"):
+        _validate_evaluator_import_origin(Path(sys.executable), checkout)
 
 
 def test_mapping_is_explicit_and_never_fabricates_rider_or_sign() -> None:

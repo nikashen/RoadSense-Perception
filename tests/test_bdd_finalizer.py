@@ -274,9 +274,11 @@ def _synthetic_evidence(tmp_path: Path, *, formal: bool = False) -> dict[str, Pa
                 "runtime_lock_sha256": _sha_tag("evaluator lock"),
                 "evaluator_config_sha256": _sha_tag("evaluator config"),
                 "packages": {
-                    "bdd100k": "pinned-test",
-                    "scalabel": "pinned-test",
-                    **({"pycocotools": "2.0.7"} if formal else {}),
+                    **(
+                        finalizer_module.BDD100K_REQUIRED_EVALUATOR_PACKAGES
+                        if formal
+                        else {"bdd100k": "pinned-test", "scalabel": "pinned-test"}
+                    ),
                 },
                 "returncode": 0,
                 "timed_out": False,
@@ -368,6 +370,20 @@ def test_finalizer_rejects_reduced_evidence(tmp_path: Path) -> None:
     evidence = _synthetic_evidence(tmp_path, formal=False)
     with pytest.raises(BDD100KFinalizeError, match="10000|MD5|formal"):
         _finalize(evidence)
+
+
+def test_finalizer_requires_split_inventory(tmp_path: Path) -> None:
+    evidence = _synthetic_evidence(tmp_path, formal=True)
+    with pytest.raises(TypeError, match="split_inventory"):
+        finalize_bdd100k_detection_benchmark(
+            source_receipt=evidence["source_receipt"],
+            dataset_manifest=evidence["dataset_manifest"],
+            image_manifest=evidence["frozen_image_manifest"],
+            model_manifest=evidence["model_manifest"],
+            inference_receipt=evidence["inference_receipt"],
+            evaluation_a=evidence["evaluation_a"],
+            evaluation_b=evidence["evaluation_b"],
+        )
 
 
 def test_finalizer_is_order_invariant_and_requires_identical_evaluator_metrics(
@@ -546,14 +562,14 @@ def test_formal_evaluator_gate_requires_pycocotools_and_result_file(tmp_path: Pa
     }
     evaluation["evaluator"]["packages"].pop("pycocotools", None)
 
-    with pytest.raises(BDD100KFinalizeError, match="pycocotools==2.0.7"):
+    with pytest.raises(BDD100KFinalizeError, match="validated lock"):
         _validate_evaluator_receipt(evaluation, **common)
 
     evaluation["evaluator"]["packages"]["pycocotools"] = "2.0.10"
-    with pytest.raises(BDD100KFinalizeError, match="pycocotools==2.0.7"):
+    with pytest.raises(BDD100KFinalizeError, match="validated lock"):
         _validate_evaluator_receipt(evaluation, **common)
 
-    evaluation["evaluator"]["packages"]["pycocotools"] = "2.0.7"
+    evaluation["evaluator"]["packages"] = dict(finalizer_module.BDD100K_REQUIRED_EVALUATOR_PACKAGES)
     evaluation["evaluator"]["returncode"] = 0
     evaluation["evaluator"]["timed_out"] = False
     evaluation["evaluator"].pop("result_source", None)

@@ -50,6 +50,7 @@ from typing import Any, cast
 
 import numpy as np
 
+from roadsense.bdd_benchmark import BDD100K_REQUIRED_EVALUATOR_PACKAGES
 from roadsense.json_io import canonical_sha256, load_strict_json, write_json_atomic
 
 # Reuse the already-tested YOLO11 implementation.  Keeping these imports
@@ -142,7 +143,7 @@ DEVKIT_COMMIT = "9ac17c6c7c51d2fc83065fccd707cd5b1882a293"
 # loading detection results).  Keep the known-good version in the runtime
 # gate and in every evaluator receipt rather than relying on an operator's
 # ambient env.
-REQUIRED_PYCOCOTOOLS_VERSION = "2.0.7"
+REQUIRED_PYCOCOTOOLS_VERSION = BDD100K_REQUIRED_EVALUATOR_PACKAGES["pycocotools"]
 MAX_IMAGE_COUNT = 100_000
 
 
@@ -577,6 +578,8 @@ def _evaluator_runtime_lock(
             [str(evaluator_python), "-c", script],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="strict",
             check=False,
             timeout=60,
             env={**os.environ, "PYTHONNOUSERSITE": "1"},
@@ -602,17 +605,85 @@ def _evaluator_runtime_lock(
             packages[name] = version
     if not packages:
         raise EvaluatorError("evaluator dependency probe returned no packages")
-    if require_formal_dependencies:
-        pycocotools_version = packages.get("pycocotools")
-        if pycocotools_version != REQUIRED_PYCOCOTOOLS_VERSION:
-            raise EvaluatorError(
-                "pinned BDD100K evaluator requires pycocotools=="
-                f"{REQUIRED_PYCOCOTOOLS_VERSION}; found {pycocotools_version or 'unavailable'}"
-            )
+    if require_formal_dependencies and packages != BDD100K_REQUIRED_EVALUATOR_PACKAGES:
+        raise EvaluatorError(
+            "pinned BDD100K evaluator packages do not match the validated runtime lock"
+        )
     lock_text = "\n".join(f"{name}=={packages[name]}" for name in sorted(packages)) + "\n"
     lock_path = output_path / "evaluator-runtime-lock.txt"
     lock_path.write_text(lock_text, encoding="utf-8", newline="\n")
     return _sha256_file(lock_path)[0], lock_text, packages
+
+
+def _validate_devkit_checkout(path: Path) -> None:
+    """Bind a formal evaluator invocation to the pinned clean Git checkout."""
+
+    git = shutil.which("git")
+    if git is None:
+        raise EvaluatorError("git is required to verify the formal BDD100K devkit checkout")
+
+    def run_git(*arguments: str) -> str:
+        try:
+            completed = subprocess.run(
+                [git, "-C", str(path), *arguments],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="strict",
+                check=False,
+                timeout=60,
+                env={**os.environ, "GIT_CONFIG_NOSYSTEM": "1"},
+            )
+        except (OSError, UnicodeError, subprocess.TimeoutExpired) as exc:
+            raise EvaluatorError("unable to inspect the formal BDD100K devkit checkout") from exc
+        if completed.returncode != 0:
+            raise EvaluatorError("evaluator-cwd is not a readable BDD100K Git checkout")
+        return completed.stdout.strip()
+
+    checkout_root = Path(run_git("rev-parse", "--show-toplevel")).resolve()
+    if checkout_root != path:
+        raise EvaluatorError("evaluator-cwd must be the BDD100K checkout root")
+    if run_git("rev-parse", "--verify", "HEAD") != DEVKIT_COMMIT:
+        raise EvaluatorError(f"BDD100K devkit checkout must be pinned to {DEVKIT_COMMIT}")
+    if run_git("status", "--porcelain=v1", "--untracked-files=all"):
+        raise EvaluatorError("formal BDD100K devkit checkout must have a clean worktree")
+    entrypoint = path / "bdd100k" / "eval" / "run.py"
+    if not entrypoint.is_file() or entrypoint.is_symlink():
+        raise EvaluatorError("formal BDD100K devkit checkout is missing bdd100k/eval/run.py")
+
+
+def _validate_evaluator_import_origin(evaluator_python: Path, checkout: Path) -> None:
+    """Ensure the isolated interpreter imports bdd100k from the pinned checkout bytes."""
+
+    script = (
+        "from pathlib import Path\n"
+        "import bdd100k.eval.run as module\n"
+        "print(Path(module.__file__).resolve())\n"
+    )
+    try:
+        completed = subprocess.run(
+            [str(evaluator_python), "-c", script],
+            cwd=str(checkout),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="strict",
+            check=False,
+            timeout=60,
+            env={**os.environ, "PYTHONNOUSERSITE": "1", "PYTHONPATH": str(checkout)},
+        )
+    except (OSError, UnicodeError, subprocess.TimeoutExpired) as exc:
+        raise EvaluatorError("unable to verify the BDD100K evaluator import origin") from exc
+    if completed.returncode != 0:
+        raise EvaluatorError("BDD100K evaluator import-origin probe failed")
+    try:
+        imported = Path(completed.stdout.strip()).resolve()
+        imported.relative_to(checkout)
+    except (OSError, ValueError) as exc:
+        raise EvaluatorError("evaluator Python must import bdd100k from evaluator-cwd") from exc
+    expected = (checkout / "bdd100k" / "eval" / "run.py").resolve()
+    if imported != expected:
+        raise EvaluatorError("evaluator Python imported an unexpected bdd100k entrypoint")
 
 
 def _validate_onnx_session(session: Any) -> tuple[Any, Any]:
@@ -1169,7 +1240,15 @@ def run_evaluation(
     cwd_path = None if evaluator_cwd is None else Path(evaluator_cwd).expanduser().resolve()
     if cwd_path is not None and not cwd_path.is_dir():
         raise EvaluatorError("evaluator-cwd must be a directory")
+    formal_lane = expected_names is not None and len(expected_names) == 10_000
+    if formal_lane:
+        if cwd_path is None:
+            raise EvaluatorError("formal BDD100K evaluation requires --evaluator-cwd")
+        _validate_devkit_checkout(cwd_path)
     evaluator_python_path = Path(evaluator_python).expanduser()
+    if formal_lane:
+        assert cwd_path is not None
+        _validate_evaluator_import_origin(evaluator_python_path, cwd_path)
     evaluator_config = {
         "schema_version": "roadsense.bdd100k-detection-evaluator-config/v1",
         "evaluator_id": DEVKIT_ID,
@@ -1188,7 +1267,7 @@ def run_evaluation(
         # Only the official 10k lane is subject to the pycocotools pin.  Tiny
         # evaluator fixtures remain useful for plumbing tests and are marked
         # non-benchmark by their reduced image manifest.
-        require_formal_dependencies=(expected_names is not None and len(expected_names) == 10_000),
+        require_formal_dependencies=formal_lane,
     )
     result_target = output_path / "evaluator-result.json"
     if result_target == gt_path or result_target == prediction_path:
@@ -1466,6 +1545,8 @@ __all__ = [
     "_public_evaluator_command",
     "_runtime_lock",
     "_sha256_file",
+    "_validate_devkit_checkout",
+    "_validate_evaluator_import_origin",
     "build_prediction_document",
     "build_prediction_frame",
     "compute_image_manifest_sha256",

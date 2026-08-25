@@ -22,7 +22,8 @@ Do not create a benchmark release until all of the following are present:
    the model, ontology adapter, inference configuration, and predictions.
 4. Two independent runs of the pinned official BDD devkit completed with
    finite metrics, distinct run IDs, byte-for-byte identical aggregate
-   metrics, and an evaluator lock containing `pycocotools==2.0.7`. See
+   metrics, and the complete validated evaluator lock documented in the BDD
+   benchmark guide (including `pycocotools==2.0.7`). See
    [BDD100K benchmark](BDD100K_BENCHMARK.md).
 5. A sanitized receipt passes
    `scripts/verify_bdd100k_detection_benchmark.py`; it contains no local

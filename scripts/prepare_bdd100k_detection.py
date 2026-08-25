@@ -514,21 +514,26 @@ def _prepare_bundle(
         # mistaken for the official validation split.  Keep reduced fixture
         # preparation permissive so the offline contract tests remain useful,
         # but never allow a 10k bundle to proceed without both attestations.
-        if images_md5 != BDD100K_OFFICIAL_IMAGES_MD5:
+        if images_md5 is not None and images_md5 != BDD100K_OFFICIAL_IMAGES_MD5:
             raise BDDPreparationError(
-                "formal BDD100K val preparation requires the official images "
-                f"MD5 {BDD100K_OFFICIAL_IMAGES_MD5}"
+                "--images-md5 must equal Berkeley's published images package MD5 "
+                f"{BDD100K_OFFICIAL_IMAGES_MD5}"
             )
-        if labels_md5 != BDD100K_OFFICIAL_LABELS_MD5:
+        if labels_md5 is not None and labels_md5 != BDD100K_OFFICIAL_LABELS_MD5:
             raise BDDPreparationError(
-                "formal BDD100K val preparation requires the official det_20 labels "
-                f"MD5 {BDD100K_OFFICIAL_LABELS_MD5}"
+                "--labels-md5 must equal Berkeley's published det_20 labels package MD5 "
+                f"{BDD100K_OFFICIAL_LABELS_MD5}"
             )
         if labels_input.suffix.lower() != ".zip":
             raise BDDPreparationError(
                 "formal BDD100K val preparation requires the official labels ZIP; "
                 "an extracted/community det_val.json is development-only"
             )
+        # The formal lane never trusts a caller to supply the expected value.
+        # It hashes both local archives below and compares them with these
+        # constants, which are pinned from Berkeley's official documentation.
+        images_md5 = BDD100K_OFFICIAL_IMAGES_MD5
+        labels_md5 = BDD100K_OFFICIAL_LABELS_MD5
     images_source = _hash_file(images_zip, include_md5=images_md5 is not None)
     labels_source = _hash_file(labels_input, include_md5=labels_md5 is not None)
     _verify_official_md5(images_source[2], images_md5, role="images package")
@@ -801,14 +806,20 @@ def _build_parser() -> argparse.ArgumentParser:
         "--images-package-md5",
         "--official-images-md5",
         dest="images_md5",
-        help="Optional official MD5 for the supplied images package; checked before extraction.",
+        help=(
+            "Expected images MD5 for reduced development fixtures. The formal 10000-image "
+            "lane always enforces Berkeley's published value."
+        ),
     )
     parser.add_argument(
         "--labels-md5",
         "--labels-package-md5",
         "--official-labels-md5",
         dest="labels_md5",
-        help="Optional official MD5 for the supplied det_20 labels package; checked before extraction.",
+        help=(
+            "Expected labels MD5 for reduced development fixtures. The formal 10000-image "
+            "lane always enforces Berkeley's published value."
+        ),
     )
     return parser
 

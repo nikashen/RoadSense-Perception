@@ -32,6 +32,14 @@ BDD100K_DEVKIT_COMMIT = "9ac17c6c7c51d2fc83065fccd707cd5b1882a293"
 BDD100K_OFFICIAL_IMAGE_COUNT = 10_000
 BDD100K_OFFICIAL_IMAGES_MD5 = "5a0359c86a0b8713adab1eee9a3041cb"
 BDD100K_OFFICIAL_LABELS_MD5 = "b86a3e1b7edbcad421b7dad2b3987c94"
+BDD100K_REQUIRED_EVALUATOR_PACKAGES = {
+    "bdd100k": "1.0.0",
+    "motmetrics": "1.4.0",
+    "numpy": "1.26.4",
+    "pycocotools": "2.0.7",
+    "pydantic": "1.10.15",
+    "scalabel": "0.3.1",
+}
 
 _REPORT_ID_PATTERN = r"^[0-9a-f]{64}$"
 _IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9._-]{1,127}$")
@@ -204,6 +212,10 @@ class BDD100KDependencyProvenance(StrictModel):
     @field_validator("packages", mode="after")
     @classmethod
     def freeze_packages(cls, value: dict[str, str]) -> dict[str, str]:
+        if value != BDD100K_REQUIRED_EVALUATOR_PACKAGES:
+            raise ValueError(
+                "dependency packages must exactly match the validated BDD100K evaluator lock"
+            )
         return cast(dict[str, str], freeze_value(dict(sorted(value.items()))))
 
 
@@ -366,6 +378,7 @@ __all__ = [
     "BDD100K_OFFICIAL_IMAGES_MD5",
     "BDD100K_OFFICIAL_IMAGE_COUNT",
     "BDD100K_OFFICIAL_LABELS_MD5",
+    "BDD100K_REQUIRED_EVALUATOR_PACKAGES",
     "BDD100KBenchmarkReceiptError",
     "BDD100KDatasetProvenance",
     "BDD100KDependencyProvenance",

@@ -313,10 +313,12 @@ def test_prepare_checks_optional_official_package_md5_before_extracting(tmp_path
         )
 
 
-def test_prepare_formal_lane_requires_both_published_package_md5s(tmp_path: Path) -> None:
+def test_prepare_formal_lane_uses_both_published_package_md5s(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     images_zip, labels_zip, _names = _sources(tmp_path)
 
-    with pytest.raises(BDDPreparationError, match="official images MD5"):
+    with pytest.raises(BDDPreparationError, match="images package MD5"):
         prepare_bdd100k_detection(
             images_zip=images_zip,
             labels_input=labels_zip,
@@ -325,7 +327,7 @@ def test_prepare_formal_lane_requires_both_published_package_md5s(tmp_path: Path
             accept_bdd100k_research_license=True,
         )
 
-    with pytest.raises(BDDPreparationError, match="official det_20 labels MD5"):
+    with pytest.raises(BDDPreparationError, match="--labels-md5 must equal"):
         prepare_bdd100k_detection(
             images_zip=images_zip,
             labels_input=labels_zip,
@@ -336,17 +338,26 @@ def test_prepare_formal_lane_requires_both_published_package_md5s(tmp_path: Path
             accept_bdd100k_research_license=True,
         )
 
-    with pytest.raises(BDDPreparationError, match="official det_20 labels MD5"):
+    observed_md5 = {
+        images_zip: preparation_module.BDD100K_OFFICIAL_IMAGES_MD5,
+        labels_zip: "0" * 32,
+    }
+
+    def fake_hash_file(path: Path, *, include_md5: bool) -> tuple[str, int, str | None]:
+        assert include_md5 is True
+        return "1" * 64, path.stat().st_size, observed_md5[path]
+
+    monkeypatch.setattr(preparation_module, "_hash_file", fake_hash_file)
+    with pytest.raises(BDDPreparationError, match="labels package MD5"):
         prepare_bdd100k_detection(
             images_zip=images_zip,
             labels_input=labels_zip,
             data_root=tmp_path / "missing-labels-md5",
             expected_image_count=DEFAULT_EXPECTED_IMAGE_COUNT,
-            images_official_md5=preparation_module.BDD100K_OFFICIAL_IMAGES_MD5,
             accept_bdd100k_research_license=True,
         )
 
-    with pytest.raises(BDDPreparationError, match="official images MD5"):
+    with pytest.raises(BDDPreparationError, match="--images-md5 must equal"):
         prepare_bdd100k_detection(
             images_zip=images_zip,
             labels_input=labels_zip,
