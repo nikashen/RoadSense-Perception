@@ -35,6 +35,7 @@ import sys
 from collections.abc import Mapping
 from pathlib import Path, PurePosixPath
 from typing import Any, cast
+from urllib.parse import urlsplit
 
 from roadsense.bdd_benchmark import (
     BDD100K_DETECTION_BENCHMARK_SCHEMA,
@@ -86,6 +87,25 @@ BDD100K_OFFICIAL_ARCHIVE_ROLES = {
 
 class BDD100KFinalizeError(ValueError):
     """Raised when benchmark evidence cannot be finalized safely."""
+
+
+def _is_official_berkeley_url(value: object) -> bool:
+    """Accept only HTTPS URLs on the exact credential-free portal origin."""
+
+    if not isinstance(value, str) or value != value.strip():
+        return False
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError:
+        return False
+    return (
+        parsed.scheme == "https"
+        and parsed.hostname == "bdd-data.berkeley.edu"
+        and parsed.username is None
+        and parsed.password is None
+        and port in (None, 443)
+    )
 
 
 def _sha256_file(path: Path) -> tuple[str, int]:
@@ -262,10 +282,7 @@ def _validate_official_source_attestation(
     if source_receipt.get("schema_version") != "roadsense.bdd100k-detection-source-receipt/v1":
         raise BDD100KFinalizeError("formal BDD100K source receipt schema is unsupported")
     dataset_source_url = dataset_manifest.get("source_url")
-    if not (
-        isinstance(dataset_source_url, str)
-        and dataset_source_url.startswith(BDD100K_OFFICIAL_SOURCE_PAGE)
-    ):
+    if not _is_official_berkeley_url(dataset_source_url):
         raise BDD100KFinalizeError(
             "formal BDD100K dataset manifest must cite the Berkeley source portal"
         )
@@ -308,9 +325,7 @@ def _validate_official_source_attestation(
         # must point at the Berkeley portal rather than the stale/mutable raw
         # mirror.  Content identity still comes from the MD5 above.
         source_url = archive.get("official_source_url")
-        if not (
-            isinstance(source_url, str) and source_url.startswith(BDD100K_OFFICIAL_SOURCE_PAGE)
-        ):
+        if not _is_official_berkeley_url(source_url):
             raise BDD100KFinalizeError(
                 f"formal BDD100K {role} archive must cite the Berkeley source portal"
             )

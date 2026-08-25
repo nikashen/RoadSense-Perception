@@ -547,6 +547,37 @@ def test_formal_source_gate_rejects_wrong_md5_or_non_zip_labels() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "unsafe_url",
+    [
+        "http://bdd-data.berkeley.edu/",
+        "https://bdd-data.berkeley.edu.attacker.invalid/",
+        "https://bdd-data.berkeley.edu@attacker.invalid/",
+        "https://user@bdd-data.berkeley.edu/",
+        "https://bdd-data.berkeley.edu:8443/",
+        " https://bdd-data.berkeley.edu/",
+    ],
+)
+def test_formal_source_gate_rejects_spoofed_berkeley_urls(unsafe_url: str) -> None:
+    source, dataset = _formal_source_attestation()
+    dataset["source_url"] = unsafe_url
+    with pytest.raises(BDD100KFinalizeError, match="Berkeley source portal"):
+        _validate_official_source_attestation(
+            source,
+            image_count=finalizer_module.BDD100K_OFFICIAL_IMAGE_COUNT,
+            dataset_manifest=dataset,
+        )
+
+    source, dataset = _formal_source_attestation()
+    source["source_archives"][0]["official_source_url"] = unsafe_url
+    with pytest.raises(BDD100KFinalizeError, match="Berkeley source portal"):
+        _validate_official_source_attestation(
+            source,
+            image_count=finalizer_module.BDD100K_OFFICIAL_IMAGE_COUNT,
+            dataset_manifest=dataset,
+        )
+
+
 def test_formal_evaluator_gate_requires_pycocotools_and_result_file(tmp_path: Path) -> None:
     fixture_dir = tmp_path / "formal-gate-test"
     fixture_dir.mkdir()
