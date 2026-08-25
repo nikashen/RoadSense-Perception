@@ -21,6 +21,8 @@ SEGMENTATION_WIDTH = 160
 SEGMENTATION_HEIGHT = 90
 
 CATEGORY_LABELS = {1: "car", 2: "pedestrian", 3: "cyclist"}
+FIXTURE_ID = "roadsense-city-loop-v2"
+VEHICLE_TRACK_IDS = (101, 102)
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,13 +37,60 @@ def _box(x: float, y: float, width: float, height: float) -> BoxXYXY:
     return BoxXYXY(x_min=x, y_min=y, x_max=x + width, y_max=y + height)
 
 
+def _lane_vehicle_box(
+    frame_index: int,
+    *,
+    lane: str,
+    start_bottom: float,
+    end_bottom: float,
+    start_width: float,
+    end_width: float,
+    lane_fraction: float,
+) -> BoxXYXY:
+    """Project an approaching vehicle along a perspective lane centerline."""
+
+    progress = frame_index / (FRAME_COUNT - 1)
+    bottom = start_bottom + (end_bottom - start_bottom) * progress
+    width = start_width + (end_width - start_width) * progress
+    height = width * 0.58
+
+    # These display-space edges match the road polygon rendered by app.js.
+    road_progress = (bottom - 250.0) / (DEMO_HEIGHT - 250.0)
+    road_center = 481.0 + 22.0 * road_progress
+    left_edge = 419.0 - 183.0 * road_progress
+    right_edge = 543.0 + 236.0 * road_progress
+    if lane == "left":
+        center_x = road_center - (road_center - left_edge) * lane_fraction
+    elif lane == "right":
+        center_x = road_center + (right_edge - road_center) * lane_fraction
+    else:
+        raise ValueError("lane must be 'left' or 'right'")
+
+    scale_x = WIDTH / DEMO_WIDTH
+    scale_y = HEIGHT / DEMO_HEIGHT
+    return _box(
+        (center_x - width / 2.0) * scale_x,
+        (bottom - height) * scale_y,
+        width * scale_x,
+        height * scale_y,
+    )
+
+
 def _truth_detections(frame_index: int) -> tuple[Detection, ...]:
     detections: list[Detection] = [
         Detection(
             category_id=1,
             label="car",
             track_id=101,
-            bbox=_box(68 + frame_index * 11.0, 228, 104, 58),
+            bbox=_lane_vehicle_box(
+                frame_index,
+                lane="right",
+                start_bottom=330.0,
+                end_bottom=420.0,
+                start_width=72.0,
+                end_width=112.0,
+                lane_fraction=0.28,
+            ),
         )
     ]
     if 2 <= frame_index <= 21:
@@ -50,7 +99,15 @@ def _truth_detections(frame_index: int) -> tuple[Detection, ...]:
                 category_id=1,
                 label="car",
                 track_id=102,
-                bbox=_box(506 - frame_index * 7.0, 202, 82, 48),
+                bbox=_lane_vehicle_box(
+                    frame_index,
+                    lane="left",
+                    start_bottom=305.0,
+                    end_bottom=360.0,
+                    start_width=55.0,
+                    end_width=78.0,
+                    lane_fraction=0.28,
+                ),
             )
         )
     if 4 <= frame_index <= 18:
@@ -209,6 +266,29 @@ def _object_payload(detection: Detection) -> dict[str, object]:
     }
 
 
+def _road_segments() -> list[dict[str, object]]:
+    return [
+        {
+            "label": "road",
+            "category_id": 1,
+            "polygon": [[236, 540], [419, 250], [543, 250], [779, 540]],
+            "confidence": 0.96,
+        },
+        {
+            "label": "sidewalk",
+            "category_id": 4,
+            "polygon": [[0, 540], [0, 377], [345, 250], [419, 250], [236, 540]],
+            "confidence": 0.88,
+        },
+        {
+            "label": "sidewalk",
+            "category_id": 4,
+            "polygon": [[543, 250], [615, 250], [960, 349], [960, 540], [779, 540]],
+            "confidence": 0.88,
+        },
+    ]
+
+
 def build_demo_payload(bundle: FixtureBundle | None = None) -> dict[str, object]:
     selected = bundle or build_fixture_bundle()
     metrics = build_fixture_metrics(selected)
@@ -220,32 +300,13 @@ def build_demo_payload(bundle: FixtureBundle | None = None) -> dict[str, object]
                 "frame_index": frame.frame_index,
                 "timestamp_ms": frame.timestamp_ms,
                 "objects": [_object_payload(detection) for detection in frame.detections],
-                "segments": [
-                    {
-                        "label": "road",
-                        "category_id": 1,
-                        "polygon": [[0, 540], [285, 255], [675, 255], [960, 540]],
-                        "confidence": 0.96,
-                    },
-                    {
-                        "label": "sidewalk",
-                        "category_id": 4,
-                        "polygon": [[0, 540], [0, 345], [285, 255], [225, 540]],
-                        "confidence": 0.88,
-                    },
-                    {
-                        "label": "sidewalk",
-                        "category_id": 4,
-                        "polygon": [[675, 255], [960, 345], [960, 540], [735, 540]],
-                        "confidence": 0.88,
-                    },
-                ],
+                "segments": _road_segments(),
             }
         )
     return {
         "schema_version": "roadsense.demo/v1",
         "source": "deterministic_geometric_fixture",
-        "fixture_id": "roadsense-city-loop-v1",
+        "fixture_id": FIXTURE_ID,
         "fps": FPS,
         "cadence_ms": 1000 // FPS,
         "image_size": {"width": WIDTH, "height": HEIGHT},
@@ -275,3 +336,14 @@ def build_demo_payload(bundle: FixtureBundle | None = None) -> dict[str, object]
             ),
         },
     }
+
+
+__all__ = [
+    "FIXTURE_ID",
+    "FRAME_COUNT",
+    "VEHICLE_TRACK_IDS",
+    "FixtureBundle",
+    "build_demo_payload",
+    "build_fixture_bundle",
+    "build_fixture_metrics",
+]

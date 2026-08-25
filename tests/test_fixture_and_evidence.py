@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from itertools import pairwise
+
 import pytest
 
 from roadsense.contracts import EvaluationReport, EvidenceLevel
@@ -10,6 +12,7 @@ from roadsense.evidence import (
 )
 from roadsense.fixture import (
     FRAME_COUNT,
+    VEHICLE_TRACK_IDS,
     build_demo_payload,
     build_fixture_bundle,
     build_fixture_metrics,
@@ -34,6 +37,27 @@ def test_fixture_bundle_shapes() -> None:
     assert len(bundle.truth_frames) == FRAME_COUNT
     assert bundle.truth_masks.shape == (FRAME_COUNT, 90, 160)
     assert bundle.truth_masks.shape == bundle.prediction_masks.shape
+
+
+def test_fixture_vehicles_follow_perspective_lanes_instead_of_sliding_sideways() -> None:
+    bundle = build_fixture_bundle()
+    vehicle_tracks: dict[int, list[tuple[float, float, float, float]]] = {}
+    for frame in bundle.truth_frames:
+        for item in frame.detections:
+            if item.track_id in VEHICLE_TRACK_IDS:
+                vehicle_tracks.setdefault(item.track_id, []).append(
+                    (item.bbox.x_min, item.bbox.y_min, item.bbox.width, item.bbox.height)
+                )
+
+    assert set(vehicle_tracks) == set(VEHICLE_TRACK_IDS)
+    for boxes in vehicle_tracks.values():
+        assert len(boxes) >= 19
+        bottom_centers = [y + height for _x, y, _width, height in boxes]
+        widths = [width for _x, _y, width, _height in boxes]
+        centers_x = [x + width / 2.0 for x, _y, width, _height in boxes]
+        assert all(next_value > value for value, next_value in pairwise(bottom_centers))
+        assert all(next_value > value for value, next_value in pairwise(widths))
+        assert abs(centers_x[-1] - centers_x[0]) < bottom_centers[-1] - bottom_centers[0]
 
 
 def test_fixture_segmentation_ontology_matches_raster_classes() -> None:

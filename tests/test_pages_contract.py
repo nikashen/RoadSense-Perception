@@ -26,7 +26,9 @@ def test_api_demo_uses_display_canvas_and_scaled_xywh() -> None:
     ]
     assert len(payload["frames"]) == 24
     first_object = payload["frames"][0]["objects"][0]
-    assert first_object["bbox"] == pytest.approx([100.05, 340.95, 157.5, 86.25])
+    assert first_object["bbox"] == pytest.approx(
+        [483.0086206896551, 287.19, 73.5, 41.010000000000005]
+    )
     assert payload["evidence"]["evaluation_authorized"] is False
     assert payload["evidence"]["frozen"] is False
 
@@ -70,14 +72,14 @@ def test_pages_build_contains_relative_fixture_contract() -> None:
         assert manifest["runtime"] == "deterministic_geometric_fixture"
         assert manifest["benchmark_claim_available"] is False
         assert manifest["fixture"] == {
-            "fixture_id": "roadsense-city-loop-v1",
+            "fixture_id": "roadsense-city-loop-v2",
             "frame_count": 24,
             "canvas": {"width": 960, "height": 540},
             "cadence_ms": 100,
-            "payload_sha256": "c427846174b459483264a341ab29ef7ca8986de6e0bce1cfa41d41797f7af92f",
+            "payload_sha256": "5358bb72f4a375246beb45986978a050b28976cd9218f472bbb6fcacfeb552f1",
         }
         demo = json.loads((built / "demo.json").read_text(encoding="utf-8"))
-        assert demo["fixture_id"] == "roadsense-city-loop-v1"
+        assert demo["fixture_id"] == "roadsense-city-loop-v2"
         assert len(demo["frames"]) == 24
         assert demo["evidence"]["benchmark_claim_available"] is False
         assert "Array.from({ length: 24 }" in app_source

@@ -35,7 +35,7 @@ def build_fixture_report() -> dict[str, object]:
     }
     report = EvaluationReport(
         schema_version="roadsense.evaluation-report/v1",
-        protocol_id="roadsense.fixture-city-loop/v1",
+        protocol_id="roadsense.fixture-city-loop/v2",
         evidence_level=EvidenceLevel.FIXTURE,
         evaluation_authorized=False,
         frozen=False,

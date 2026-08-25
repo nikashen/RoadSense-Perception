@@ -1274,12 +1274,13 @@ def fixture_dry_run_summary() -> dict[str, object]:
     """Return an explicit, non-benchmark fixture dry-run summary."""
 
     from roadsense.evidence import build_fixture_report
+    from roadsense.fixture import FIXTURE_ID
 
     report = build_fixture_report()
     return {
         "status": "ok",
         "source": "deterministic_geometric_fixture",
-        "fixture_id": "roadsense-city-loop-v1",
+        "fixture_id": FIXTURE_ID,
         "evidence_level": report["evidence_level"],
         "evaluation_authorized": report["evaluation_authorized"],
         "frozen": report["frozen"],

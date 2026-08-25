@@ -6,6 +6,8 @@
   const WIDTH = 960;
   const HEIGHT = 540;
   const FIXTURE_CADENCE_MS = 100;
+  const ROAD_BOTTOM = 540;
+  const ROAD_HORIZON = 250;
 
   const COLORS = Object.freeze({
     car: "#b8ef67",
@@ -433,15 +435,34 @@
     // it cannot be mistaken for the hashed city-loop payload.
     const frames = Array.from({ length: 24 }, (_, index) => {
       const detections = [
-        detection("T-01", "car", 0.95 - index * 0.004, [574 + index * 5.5, 311 + index * 4.2, 94 + index * 2.1, 56 + index * 1.15], index),
-        detection("T-02", "car", 0.87 + index * 0.003, [447 - index * 0.8, 281 + index * 1.15, 52 + index * 0.65, 31 + index * 0.42], index),
+        detection(
+          "T-01",
+          "car",
+          0.95 - index * 0.004,
+          laneVehicleBox(index, "right", 330, 420, 72, 112, 0.28),
+          index,
+        ),
+        detection(
+          "T-02",
+          "car",
+          0.87 + index * 0.003,
+          laneVehicleBox(index, "left", 305, 360, 55, 78, 0.28),
+          index,
+        ),
         detection("T-07", "pedestrian", 0.91 - Math.abs(index - 5) * 0.009, [774 - index * 25, 357 + index * 0.8, 27, 67], index, index > 7 ? "partial" : "none"),
         detection("T-20", "traffic light", 0.73 + (index % 3) * 0.02, [668, 174, 23, 48], index),
       ];
 
       if (index <= 8) {
         detections.push(
-          detection("T-04", "bus", 0.82 - index * 0.012, [305 - index * 7.2, 291 + index * 1.7, 72 + index * 0.9, 69 + index * 0.7], index, index >= 7 ? "partial" : "none"),
+          detection(
+            "T-04",
+            "bus",
+            0.82 - index * 0.012,
+            laneVehicleBox(index, "left", 340, 410, 78, 112, 0.55),
+            index,
+            index >= 7 ? "partial" : "none",
+          ),
         );
       }
 
@@ -495,7 +516,7 @@
     });
 
     return {
-      fixtureId: "roadsense-emergency-fallback-v1",
+      fixtureId: "roadsense-emergency-fallback-v2",
       schemaVersion: "roadsense.demo/v1",
       source: "deterministic_geometric_fixture",
       evidence: {
@@ -510,6 +531,22 @@
       cadenceMs: FIXTURE_CADENCE_MS,
       frames,
     };
+  }
+
+  function laneVehicleBox(frameIndex, lane, startBottom, endBottom, startWidth, endWidth, laneFraction) {
+    const progress = frameIndex / 23;
+    const bottom = startBottom + (endBottom - startBottom) * progress;
+    const width = startWidth + (endWidth - startWidth) * progress;
+    const height = width * 0.58;
+    const roadProgress = (bottom - ROAD_HORIZON) / (ROAD_BOTTOM - ROAD_HORIZON);
+    const roadCenter = 481 + 22 * roadProgress;
+    const leftEdge = 419 - 183 * roadProgress;
+    const rightEdge = 543 + 236 * roadProgress;
+    const centerX =
+      lane === "left"
+        ? roadCenter - (roadCenter - leftEdge) * laneFraction
+        : roadCenter + (rightEdge - roadCenter) * laneFraction;
+    return [centerX - width / 2, bottom - height, width, height];
   }
 
   function detection(trackId, className, confidence, bbox, frameIndex, occlusion = "none") {

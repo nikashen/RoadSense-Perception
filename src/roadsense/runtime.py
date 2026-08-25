@@ -27,6 +27,7 @@ from pydantic import Field, field_validator, model_validator
 from roadsense import __version__
 from roadsense.contracts import SHA256, EvidenceLevel, StrictModel, freeze_value, validate_bool
 from roadsense.fixture import (
+    FIXTURE_ID,
     FRAME_COUNT,
     FixtureBundle,
     build_demo_payload,
@@ -382,7 +383,7 @@ def _fixture_input_material(bundle: FixtureBundle, *, iterations: int) -> dict[s
         }
 
     return {
-        "fixture_id": "roadsense-city-loop-v1",
+        "fixture_id": FIXTURE_ID,
         "iterations": iterations,
         "truth_frames": [frame.model_dump(mode="json") for frame in bundle.truth_frames],
         "prediction_frames": [frame.model_dump(mode="json") for frame in bundle.prediction_frames],
@@ -433,7 +434,7 @@ def build_fixture_runtime_record(*, iterations: int = 1) -> RuntimeAuditRecord:
     input_sha256 = canonical_sha256(input_payload)
     input_material = {
         "source": "deterministic_geometric_fixture",
-        "fixture_id": "roadsense-city-loop-v1",
+        "fixture_id": FIXTURE_ID,
         "frame_count": frame_count,
         "iterations": iterations,
         "payload_sha256": input_sha256,
