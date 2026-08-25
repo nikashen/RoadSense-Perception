@@ -82,6 +82,36 @@ def test_freeze_manifest_binds_images_and_rejects_mutation(tmp_path: Path) -> No
         validate_frozen_image_manifest(tampered)
 
 
+def test_formal_evaluation_requires_an_explicit_independent_role(tmp_path: Path) -> None:
+    records = [
+        {"name": f"frame-{index:05d}.jpg", "sha256": "1" * 64, "bytes": 1}
+        for index in range(10_000)
+    ]
+    manifest = freeze_image_manifest(
+        {
+            "schema_version": "roadsense.bdd100k-detection-images/v1",
+            "dataset_id": "BDD100K",
+            "task": "detection",
+            "split": "val",
+            "image_count": len(records),
+            "images_tree_sha256": canonical_sha256(records),
+            "images": records,
+        }
+    )
+    gt = tmp_path / "gt.json"
+    pred = tmp_path / "pred.json"
+    gt.write_text("[]", encoding="utf-8")
+    pred.write_text("[]", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="requires --role independent_a or independent_b"):
+        run_evaluation(
+            ground_truth=gt,
+            predictions=pred,
+            output_dir=tmp_path / "evaluation",
+            image_manifest=manifest,
+        )
+
+
 def test_mapping_is_explicit_and_never_fabricates_rider_or_sign() -> None:
     assert len(COCO_TO_BDD_CATEGORY) == 80
     assert map_coco_category(0) == "pedestrian"

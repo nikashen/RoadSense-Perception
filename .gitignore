@@ -5,6 +5,7 @@ __pycache__/
 *.so
 .venv/
 .venv-ort/
+.venv-bdd-eval/
 venv/
 *.egg-info/
 build/

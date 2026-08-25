@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 
+import scripts.prepare_bdd100k_detection as preparation_module
 from roadsense.contracts import DatasetManifest
 from roadsense.json_io import canonical_sha256, load_strict_json
 from scripts.prepare_bdd100k_detection import (
@@ -308,5 +309,67 @@ def test_prepare_checks_optional_official_package_md5_before_extracting(tmp_path
             data_root=tmp_path / "prepared",
             expected_image_count=len(names),
             images_official_md5="0" * 32,
+            accept_bdd100k_research_license=True,
+        )
+
+
+def test_prepare_formal_lane_requires_both_published_package_md5s(tmp_path: Path) -> None:
+    images_zip, labels_zip, _names = _sources(tmp_path)
+
+    with pytest.raises(BDDPreparationError, match="official images MD5"):
+        prepare_bdd100k_detection(
+            images_zip=images_zip,
+            labels_input=labels_zip,
+            data_root=tmp_path / "missing-images-md5",
+            expected_image_count=DEFAULT_EXPECTED_IMAGE_COUNT,
+            accept_bdd100k_research_license=True,
+        )
+
+    with pytest.raises(BDDPreparationError, match="official det_20 labels MD5"):
+        prepare_bdd100k_detection(
+            images_zip=images_zip,
+            labels_input=labels_zip,
+            data_root=tmp_path / "wrong-labels-md5",
+            expected_image_count=DEFAULT_EXPECTED_IMAGE_COUNT,
+            images_official_md5=preparation_module.BDD100K_OFFICIAL_IMAGES_MD5,
+            labels_official_md5="0" * 32,
+            accept_bdd100k_research_license=True,
+        )
+
+    with pytest.raises(BDDPreparationError, match="official det_20 labels MD5"):
+        prepare_bdd100k_detection(
+            images_zip=images_zip,
+            labels_input=labels_zip,
+            data_root=tmp_path / "missing-labels-md5",
+            expected_image_count=DEFAULT_EXPECTED_IMAGE_COUNT,
+            images_official_md5=preparation_module.BDD100K_OFFICIAL_IMAGES_MD5,
+            accept_bdd100k_research_license=True,
+        )
+
+    with pytest.raises(BDDPreparationError, match="official images MD5"):
+        prepare_bdd100k_detection(
+            images_zip=images_zip,
+            labels_input=labels_zip,
+            data_root=tmp_path / "wrong-images-md5",
+            expected_image_count=DEFAULT_EXPECTED_IMAGE_COUNT,
+            images_official_md5="0" * 32,
+            labels_official_md5=preparation_module.BDD100K_OFFICIAL_LABELS_MD5,
+            accept_bdd100k_research_license=True,
+        )
+
+
+def test_prepare_formal_lane_rejects_extracted_or_community_labels(tmp_path: Path) -> None:
+    images_zip, _labels_zip, _names = _sources(tmp_path)
+    labels_json = tmp_path / "det_val.json"
+    labels_json.write_text("[]", encoding="utf-8")
+
+    with pytest.raises(BDDPreparationError, match="official labels ZIP"):
+        prepare_bdd100k_detection(
+            images_zip=images_zip,
+            labels_input=labels_json,
+            data_root=tmp_path / "community-labels",
+            expected_image_count=DEFAULT_EXPECTED_IMAGE_COUNT,
+            images_official_md5=preparation_module.BDD100K_OFFICIAL_IMAGES_MD5,
+            labels_official_md5=preparation_module.BDD100K_OFFICIAL_LABELS_MD5,
             accept_bdd100k_research_license=True,
         )

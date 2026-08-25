@@ -42,6 +42,9 @@ from roadsense.bdd_benchmark import (
     BDD100K_DEVKIT_COMMIT,
     BDD100K_DEVKIT_ID,
     BDD100K_DEVKIT_REPOSITORY,
+    BDD100K_OFFICIAL_IMAGE_COUNT,
+    BDD100K_OFFICIAL_IMAGES_MD5,
+    BDD100K_OFFICIAL_LABELS_MD5,
     BDD100KBenchmarkReceiptError,
     build_bdd100k_detection_receipt,
 )
@@ -65,6 +68,24 @@ except ModuleNotFoundError:  # pragma: no cover - exercised by direct script CLI
 FINALIZE_SCHEMA = "roadsense.bdd100k-detection-finalize/v1"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9._-]{1,127}$")
+
+# Formal BDD100K Detection 2020 ``val`` provenance.  These values mirror the
+# checks in ``prepare_bdd100k_detection``.  They are deliberately repeated
+# here instead of trusting a caller-provided source receipt: finalization is a
+# separate publication boundary and must reject a Kaggle/community label
+# bundle even when it has the expected filename/layout.  Reduced synthetic
+# fixtures used by unit tests are allowed below the official 10,000-image
+# cardinality, but they cannot be promoted as the real lane.
+BDD100K_OFFICIAL_SOURCE_PAGE = "https://bdd-data.berkeley.edu/"
+BDD100K_OFFICIAL_ARCHIVE_ROLES = {
+    "images_val_zip": "zip",
+    "det_20_labels": "zip",
+}
+# ``scalabel==0.3.1`` (used by the pinned bdd100k devkit) calls a legacy
+# pycocotools result shape.  pycocotools 2.0.10 raises ``KeyError: info`` in
+# that path, while 2.0.7 is the known-compatible build used for the smoke
+# receipt.  Keep this requirement explicit in the publication gate.
+BDD100K_REQUIRED_PYCOCOTOOLS = "2.0.7"
 
 
 class BDD100KFinalizeError(ValueError):
@@ -218,6 +239,87 @@ def compute_archive_sha256(source_receipt: Mapping[str, Any]) -> str:
     return canonical_sha256(_archive_material(source_receipt))
 
 
+def _validate_official_source_attestation(
+    source_receipt: Mapping[str, Any],
+    *,
+    image_count: int,
+    dataset_manifest: Mapping[str, Any],
+) -> None:
+    """Require Berkeley package identity before enabling a formal claim.
+
+    The structural checks in :func:`_validate_prepared_evidence` (image names,
+    label categories, and frame cardinality) intentionally also support small
+    synthetic fixtures.  They are not sufficient to distinguish a community
+    ``det_val.json`` from Berkeley's Detection 2020 package.  For the real
+    10,000-image lane, require the two published package MD5 attestations and
+    the Berkeley portal provenance.  The direct HTTP mirror is intentionally
+    *not* allow-listed: it has returned the wrong payload in the past, and a
+    URL alone is never accepted as content identity.
+
+    This function validates receipt metadata only; preparation remains the
+    place where the MD5 values are computed over the operator's local files.
+    """
+
+    if image_count != BDD100K_OFFICIAL_IMAGE_COUNT:
+        return
+
+    if source_receipt.get("schema_version") != "roadsense.bdd100k-detection-source-receipt/v1":
+        raise BDD100KFinalizeError("formal BDD100K source receipt schema is unsupported")
+    dataset_source_url = dataset_manifest.get("source_url")
+    if not (
+        isinstance(dataset_source_url, str)
+        and dataset_source_url.startswith(BDD100K_OFFICIAL_SOURCE_PAGE)
+    ):
+        raise BDD100KFinalizeError(
+            "formal BDD100K dataset manifest must cite the Berkeley source portal"
+        )
+
+    archives = source_receipt.get("source_archives")
+    if not isinstance(archives, list) or len(archives) != len(BDD100K_OFFICIAL_ARCHIVE_ROLES):
+        raise BDD100KFinalizeError(
+            "formal BDD100K source receipt must contain exactly the images and "
+            "det_20 labels packages"
+        )
+    by_role: dict[str, Mapping[str, Any]] = {}
+    for index, archive in enumerate(archives):
+        if not isinstance(archive, Mapping):
+            raise BDD100KFinalizeError(f"source_archives[{index}] must be an object")
+        role = archive.get("role")
+        if not isinstance(role, str) or role in by_role:
+            raise BDD100KFinalizeError("formal BDD100K source archive roles are invalid")
+        by_role[role] = archive
+    if set(by_role) != set(BDD100K_OFFICIAL_ARCHIVE_ROLES):
+        raise BDD100KFinalizeError(
+            "formal BDD100K source receipt must include images_val_zip and det_20_labels"
+        )
+
+    expected_md5 = {
+        "images_val_zip": BDD100K_OFFICIAL_IMAGES_MD5,
+        "det_20_labels": BDD100K_OFFICIAL_LABELS_MD5,
+    }
+    for role, expected_format in BDD100K_OFFICIAL_ARCHIVE_ROLES.items():
+        archive = by_role[role]
+        if archive.get("format") != expected_format:
+            raise BDD100KFinalizeError(
+                f"formal BDD100K {role} archive must be the official ZIP package"
+            )
+        observed_md5 = archive.get("official_package_md5")
+        if not isinstance(observed_md5, str) or observed_md5.lower() != expected_md5[role]:
+            raise BDD100KFinalizeError(
+                f"formal BDD100K {role} archive is missing the published official MD5"
+            )
+        # ``official_source_url`` is retained for local provenance, but it
+        # must point at the Berkeley portal rather than the stale/mutable raw
+        # mirror.  Content identity still comes from the MD5 above.
+        source_url = archive.get("official_source_url")
+        if not (
+            isinstance(source_url, str) and source_url.startswith(BDD100K_OFFICIAL_SOURCE_PAGE)
+        ):
+            raise BDD100KFinalizeError(
+                f"formal BDD100K {role} archive must cite the Berkeley source portal"
+            )
+
+
 def _expected_content_sha256(
     *, image_count: int, images_tree_sha256: str, labels_sha256: str
 ) -> str:
@@ -280,6 +382,11 @@ def _validate_prepared_evidence(
     images_tree_sha256 = _require_sha(
         validated_image_manifest["images_tree_sha256"], "images_tree_sha256"
     )
+    _validate_official_source_attestation(
+        source_receipt,
+        image_count=int(image_count),
+        dataset_manifest=dataset_manifest,
+    )
     split_manifest_sha256 = _require_sha(
         validated_image_manifest["manifest_sha256"], "manifest_sha256"
     )
@@ -338,6 +445,17 @@ def _validate_prepared_evidence(
                 "split inventory label frame count disagrees with frozen manifest"
             )
     labels_sha256 = _require_sha(labels_sha256, "ground_truth_sha256")
+    archive_md5_by_role = {
+        str(item["role"]): item.get("official_package_md5")
+        for item in source_archives
+        if isinstance(item.get("role"), str)
+    }
+    images_package_md5 = archive_md5_by_role.get("images_val_zip")
+    labels_package_md5 = archive_md5_by_role.get("det_20_labels")
+    if image_count == BDD100K_OFFICIAL_IMAGE_COUNT and (
+        not isinstance(images_package_md5, str) or not isinstance(labels_package_md5, str)
+    ):
+        raise BDD100KFinalizeError("formal BDD100K package MD5 attestations are missing")
     expected_content = _expected_content_sha256(
         image_count=image_count, images_tree_sha256=images_tree_sha256, labels_sha256=labels_sha256
     )
@@ -354,6 +472,8 @@ def _validate_prepared_evidence(
         "ground_truth_sha256": labels_sha256,
         "split_manifest_sha256": split_manifest_sha256,
         "image_count": image_count,
+        "images_package_md5": images_package_md5,
+        "labels_package_md5": labels_package_md5,
         "content_sha256": expected_content,
     }
 
@@ -527,6 +647,25 @@ def _validate_evaluator_receipt(
         if any(char in version for char in ("/", "\\", ":", "@")):
             raise BDD100KFinalizeError("evaluator dependency lock exposes a path")
         normalized_packages[name] = version
+    if expected_image_count == BDD100K_OFFICIAL_IMAGE_COUNT:
+        observed_pycocotools = normalized_packages.get("pycocotools")
+        if observed_pycocotools != BDD100K_REQUIRED_PYCOCOTOOLS:
+            raise BDD100KFinalizeError(
+                "formal BDD100K evaluator requires pycocotools=="
+                f"{BDD100K_REQUIRED_PYCOCOTOOLS} (got {observed_pycocotools or 'missing'})"
+            )
+        # ``status=ok`` is generated by the runner only after a zero exit and
+        # parseable result.  Requiring the underlying fields here prevents a
+        # hand-edited receipt from converting a failed wrapper into a claim.
+        if evaluator.get("returncode") != 0 or evaluator.get("timed_out") is not False:
+            raise BDD100KFinalizeError(
+                "formal BDD100K evaluator receipt must record returncode=0 and timed_out=false"
+            )
+        result_source = evaluator.get("result_source")
+        if result_source != "file":
+            raise BDD100KFinalizeError(
+                "formal BDD100K evaluator receipt must bind a result file (not stdout fallback)"
+            )
     run_id = _require_identifier(value.get("run_id"), "evaluation.run_id")
     _check_optional_file_hash(
         base=base,
@@ -648,7 +787,18 @@ def finalize_bdd100k_detection_benchmark(
         raise BDD100KFinalizeError("independent evaluator runs use different evaluator configs")
     if first["lock_sha256"] != second["lock_sha256"] or first["packages"] != second["packages"]:
         raise BDD100KFinalizeError("independent evaluator runs use different dependency locks")
+    # Validate reduced fixtures deeply enough to exercise integrity errors, but
+    # never serialize one as a public BDD100K benchmark receipt.
+    if dataset_evidence["image_count"] != BDD100K_OFFICIAL_IMAGE_COUNT:
+        raise BDD100KFinalizeError(
+            "formal BDD100K benchmark requires exactly 10000 validation images"
+        )
     explicit_roles = [item["role"] for item in (first, second) if item["role"] is not None]
+    if dataset_evidence["image_count"] == BDD100K_OFFICIAL_IMAGE_COUNT and len(explicit_roles) != 2:
+        raise BDD100KFinalizeError(
+            "formal BDD100K evaluator receipts must explicitly declare independent_a and "
+            "independent_b roles"
+        )
     if explicit_roles and set(explicit_roles) != {"independent_a", "independent_b"}:
         raise BDD100KFinalizeError(
             "explicit evaluator roles must be independent_a and independent_b"
@@ -695,6 +845,9 @@ def finalize_bdd100k_detection_benchmark(
             "task": "detection",
             "release": "2020",
             "split": "val",
+            "image_count": dataset_evidence["image_count"],
+            "images_package_md5": dataset_evidence["images_package_md5"],
+            "labels_package_md5": dataset_evidence["labels_package_md5"],
             **{
                 key: dataset_evidence[key]
                 for key in (

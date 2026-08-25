@@ -137,6 +137,12 @@ EVALUATION_RECEIPT_SCHEMA = "roadsense.bdd100k-detection-evaluation/v1"
 DEVKIT_MODULE = "bdd100k.eval.run"
 DEVKIT_ID = "bdd100k-devkit"
 DEVKIT_COMMIT = "9ac17c6c7c51d2fc83065fccd707cd5b1882a293"
+# The pinned bdd100k/scalabel evaluator path is incompatible with the tested
+# pycocotools 2.0.9/2.0.10 releases (they raise ``KeyError: info`` while
+# loading detection results).  Keep the known-good version in the runtime
+# gate and in every evaluator receipt rather than relying on an operator's
+# ambient env.
+REQUIRED_PYCOCOTOOLS_VERSION = "2.0.7"
 MAX_IMAGE_COUNT = 100_000
 
 
@@ -544,7 +550,10 @@ def _runtime_lock(path: Path, *, packages: Sequence[str] | None = None) -> tuple
 
 
 def _evaluator_runtime_lock(
-    evaluator_python: Path, output_path: Path
+    evaluator_python: Path,
+    output_path: Path,
+    *,
+    require_formal_dependencies: bool = False,
 ) -> tuple[str, str, dict[str, str]]:
     """Capture dependency versions from the *isolated evaluator* interpreter."""
 
@@ -593,6 +602,13 @@ def _evaluator_runtime_lock(
             packages[name] = version
     if not packages:
         raise EvaluatorError("evaluator dependency probe returned no packages")
+    if require_formal_dependencies:
+        pycocotools_version = packages.get("pycocotools")
+        if pycocotools_version != REQUIRED_PYCOCOTOOLS_VERSION:
+            raise EvaluatorError(
+                "pinned BDD100K evaluator requires pycocotools=="
+                f"{REQUIRED_PYCOCOTOOLS_VERSION}; found {pycocotools_version or 'unavailable'}"
+            )
     lock_text = "\n".join(f"{name}=={packages[name]}" for name in sorted(packages)) + "\n"
     lock_path = output_path / "evaluator-runtime-lock.txt"
     lock_path.write_text(lock_text, encoding="utf-8", newline="\n")
@@ -1116,6 +1132,7 @@ def run_evaluation(
     evaluator_cwd: Path | str | None = None,
     image_manifest: Path | str | Mapping[str, Any] | None = None,
     timeout_seconds: float = 3600.0,
+    role: str | None = None,
 ) -> dict[str, Any]:
     """Run the pinned BDD100K official detection evaluator independently."""
 
@@ -1139,6 +1156,12 @@ def run_evaluation(
         )
         expected_names = [cast(str, item["name"]) for item in manifest["images"]]
         manifest_digest = cast(str, manifest["manifest_sha256"])
+    if role is not None and role not in {"independent_a", "independent_b"}:
+        raise EvaluatorError("evaluation role must be independent_a or independent_b")
+    if expected_names is not None and len(expected_names) == 10_000 and role is None:
+        raise EvaluatorError(
+            "formal BDD100K evaluation requires --role independent_a or independent_b"
+        )
     frames = _validate_prediction_document(prediction_payload, expected_names=expected_names)
     output_path.mkdir(parents=True, exist_ok=True)
     gt_sha, gt_bytes = _sha256_file(gt_path)
@@ -1160,7 +1183,12 @@ def run_evaluation(
     write_json_atomic(output_path / "evaluator-config.json", evaluator_config)
     evaluator_config_sha, _ = _sha256_file(output_path / "evaluator-config.json")
     evaluator_lock_sha, _evaluator_lock_text, evaluator_packages = _evaluator_runtime_lock(
-        evaluator_python_path, output_path
+        evaluator_python_path,
+        output_path,
+        # Only the official 10k lane is subject to the pycocotools pin.  Tiny
+        # evaluator fixtures remain useful for plumbing tests and are marked
+        # non-benchmark by their reduced image manifest.
+        require_formal_dependencies=(expected_names is not None and len(expected_names) == 10_000),
     )
     result_target = output_path / "evaluator-result.json"
     if result_target == gt_path or result_target == prediction_path:
@@ -1260,6 +1288,7 @@ def run_evaluation(
         "schema_version": EVALUATION_RECEIPT_SCHEMA,
         "stage": "evaluate",
         "status": status,
+        "role": role,
         "dataset": {
             "ground_truth_sha256": gt_sha,
             "ground_truth_bytes": gt_bytes,
@@ -1341,6 +1370,11 @@ def _build_parser() -> argparse.ArgumentParser:
     evaluate.add_argument("--evaluator-python", type=Path, default=Path(sys.executable))
     evaluate.add_argument("--evaluator-cwd", type=Path)
     evaluate.add_argument("--timeout-seconds", type=float, default=3600.0)
+    evaluate.add_argument(
+        "--role",
+        choices=("independent_a", "independent_b"),
+        help="Required independent evaluator role for the formal 10,000-image lane.",
+    )
     return parser
 
 
@@ -1385,6 +1419,7 @@ def main(argv: list[str] | None = None) -> int:
                 evaluator_cwd=args.evaluator_cwd,
                 image_manifest=args.image_manifest,
                 timeout_seconds=args.timeout_seconds,
+                role=args.role,
             )
             print(
                 json.dumps(
@@ -1420,6 +1455,7 @@ __all__ = [
     "IMAGE_MANIFEST_SCHEMA",
     "INFERENCE_RECEIPT_SCHEMA",
     "PREDICTION_SCHEMA",
+    "REQUIRED_PYCOCOTOOLS_VERSION",
     "UNSUPPORTED_BDD_CATEGORIES",
     "BDDRunnerError",
     "FrozenManifestError",

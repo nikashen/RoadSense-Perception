@@ -16,9 +16,12 @@ from typing import Any
 
 import pytest
 
+import scripts.finalize_bdd100k_detection_benchmark as finalizer_module
 from roadsense.json_io import canonical_sha256, load_strict_json
 from scripts.finalize_bdd100k_detection_benchmark import (
     BDD100KFinalizeError,
+    _validate_evaluator_receipt,
+    _validate_official_source_attestation,
     finalize_bdd100k_detection_benchmark,
 )
 from scripts.run_bdd100k_detection_benchmark import freeze_image_manifest
@@ -41,8 +44,14 @@ def _write_json(path: Path, payload: object) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, sort_keys=True), encoding="utf-8")
 
 
-def _synthetic_evidence(tmp_path: Path) -> dict[str, Path]:
-    """Build path-backed evidence with the same fields as real prep/freeze output."""
+def _synthetic_evidence(tmp_path: Path, *, formal: bool = False) -> dict[str, Path]:
+    """Build path-backed evidence with real or reduced protocol cardinality.
+
+    ``formal=True`` still uses synthetic hashes/bytes and never ships BDD
+    media. It only exercises the exact 10,000-image publication gate.
+    """
+
+    image_count = finalizer_module.BDD100K_OFFICIAL_IMAGE_COUNT if formal else 1
 
     archives = [
         {
@@ -52,6 +61,11 @@ def _synthetic_evidence(tmp_path: Path) -> dict[str, Path]:
             "sha256": _sha_tag("images archive"),
             "bytes": 101,
             "official_source_url": "https://bdd-data.berkeley.edu/images",
+            **(
+                {"official_package_md5": finalizer_module.BDD100K_OFFICIAL_IMAGES_MD5}
+                if formal
+                else {}
+            ),
         },
         {
             "role": "det_20_labels",
@@ -60,16 +74,28 @@ def _synthetic_evidence(tmp_path: Path) -> dict[str, Path]:
             "sha256": _sha_tag("labels archive"),
             "bytes": 202,
             "official_source_url": "https://bdd-data.berkeley.edu/labels",
+            **(
+                {"official_package_md5": finalizer_module.BDD100K_OFFICIAL_LABELS_MD5}
+                if formal
+                else {}
+            ),
         },
     ]
-    image_records = [{"name": "frame-0001.jpg", "sha256": _sha_tag("frame bytes"), "bytes": 10}]
+    image_records = [
+        {
+            "name": f"frame-{index:05d}.jpg",
+            "sha256": _sha_tag(f"frame bytes {index}"),
+            "bytes": 10,
+        }
+        for index in range(image_count)
+    ]
     image_manifest = freeze_image_manifest(
         {
             "schema_version": "roadsense.bdd100k-detection-images/v1",
             "dataset_id": "BDD100K",
             "task": "detection",
             "split": "val",
-            "image_count": 1,
+            "image_count": image_count,
             "images_tree_sha256": canonical_sha256(image_records),
             "images": image_records,
             "source_archives": archives,
@@ -84,7 +110,7 @@ def _synthetic_evidence(tmp_path: Path) -> dict[str, Path]:
             "split": "val",
             "images_tree_sha256": image_manifest["images_tree_sha256"],
             "labels_sha256": labels_sha,
-            "image_count": 1,
+            "image_count": image_count,
         }
     )
     source_receipt: dict[str, Any] = {
@@ -116,7 +142,7 @@ def _synthetic_evidence(tmp_path: Path) -> dict[str, Path]:
         "source_url": "https://bdd-data.berkeley.edu/",
         "license_id": "BDD100K-research-license-accepted-locally",
         "tasks": ["detection"],
-        "splits": {"val": "1 image; det_20/det_val.json"},
+        "splits": {"val": f"{image_count} images; det_20/det_val.json"},
         "content_sha256": content_sha,
         "evaluation_authorized": True,
         "frozen": False,
@@ -129,13 +155,13 @@ def _synthetic_evidence(tmp_path: Path) -> dict[str, Path]:
         "split": "val",
         "image_directory": "images/val",
         "image_manifest": "image-manifest.json",
-        "image_count": 1,
+        "image_count": image_count,
         "images_tree_sha256": image_manifest["images_tree_sha256"],
         "labels": {
             "path": "labels/det_val.json",
             "sha256": labels_sha,
             "bytes": 303,
-            "frame_count": 1,
+            "frame_count": image_count,
             "categories": [
                 "pedestrian",
                 "rider",
@@ -178,7 +204,7 @@ def _synthetic_evidence(tmp_path: Path) -> dict[str, Path]:
     inference_dir = tmp_path / "inference-run"
     inference_dir.mkdir(exist_ok=True)
     prediction_file = inference_dir / "predictions.json"
-    prediction_file.write_bytes(b'[{"name":"frame-0001.jpg","labels":[],"attributes":{}}]\n')
+    prediction_file.write_bytes(b'[{"name":"frame-00000.jpg","labels":[],"attributes":{}}]\n')
     prediction_sha = _sha_bytes(prediction_file.read_bytes())
     inference_receipt: dict[str, Any] = {
         "schema_version": "roadsense.bdd100k-detection-inference/v1",
@@ -190,7 +216,7 @@ def _synthetic_evidence(tmp_path: Path) -> dict[str, Path]:
             "split": "val",
             "image_manifest_sha256": image_manifest["manifest_sha256"],
             "images_tree_sha256": image_manifest["images_tree_sha256"],
-            "image_count": 1,
+            "image_count": image_count,
         },
         "model": {
             "path_name": "weights/model.onnx",
@@ -207,7 +233,7 @@ def _synthetic_evidence(tmp_path: Path) -> dict[str, Path]:
             "sha256": prediction_sha,
             "canonical_sha256": _sha_tag("prediction canonical"),
             "bytes": prediction_file.stat().st_size,
-            "frame_count": 1,
+            "frame_count": image_count,
             "schema_version": "scalabel.bdd100k-detection/v1",
         },
     }
@@ -230,6 +256,7 @@ def _synthetic_evidence(tmp_path: Path) -> dict[str, Path]:
             "schema_version": "roadsense.bdd100k-detection-evaluation/v1",
             "stage": "evaluate",
             "status": "ok",
+            "role": "independent_a" if role == "evaluation-a" else "independent_b",
             "dataset": {
                 "ground_truth_sha256": labels_sha,
                 "split": "val",
@@ -238,7 +265,7 @@ def _synthetic_evidence(tmp_path: Path) -> dict[str, Path]:
             "prediction": {
                 "sha256": prediction_sha,
                 "bytes": prediction_file.stat().st_size,
-                "frame_count": 1,
+                "frame_count": image_count,
             },
             "evaluator": {
                 "id": "bdd100k-devkit",
@@ -246,7 +273,14 @@ def _synthetic_evidence(tmp_path: Path) -> dict[str, Path]:
                 "commit": DEVKIT_COMMIT,
                 "runtime_lock_sha256": _sha_tag("evaluator lock"),
                 "evaluator_config_sha256": _sha_tag("evaluator config"),
-                "packages": {"bdd100k": "pinned-test", "scalabel": "pinned-test"},
+                "packages": {
+                    "bdd100k": "pinned-test",
+                    "scalabel": "pinned-test",
+                    **({"pycocotools": "2.0.7"} if formal else {}),
+                },
+                "returncode": 0,
+                "timed_out": False,
+                "result_source": "file",
                 "stdout_sha256": _sha_bytes(stdout_file.read_bytes()),
                 "stderr_sha256": _sha_bytes(stderr_file.read_bytes()),
                 "result_sha256": result_sha,
@@ -298,7 +332,7 @@ def _finalize(evidence: dict[str, Path]) -> dict[str, Any]:
 def test_finalizer_accepts_real_prep_freeze_field_shapes_and_redacts_paths(
     tmp_path: Path,
 ) -> None:
-    evidence = _synthetic_evidence(tmp_path)
+    evidence = _synthetic_evidence(tmp_path, formal=True)
     output = tmp_path / "public" / "benchmark-receipt.json"
     receipt = finalize_bdd100k_detection_benchmark(
         source_receipt=evidence["source_receipt"],
@@ -328,10 +362,18 @@ def test_finalizer_accepts_real_prep_freeze_field_shapes_and_redacts_paths(
     assert "bdd100k.berkeley" not in text
 
 
+def test_finalizer_rejects_reduced_evidence(tmp_path: Path) -> None:
+    """A reduced/community fixture must not cross the formal release gate."""
+
+    evidence = _synthetic_evidence(tmp_path, formal=False)
+    with pytest.raises(BDD100KFinalizeError, match="10000|MD5|formal"):
+        _finalize(evidence)
+
+
 def test_finalizer_is_order_invariant_and_requires_identical_evaluator_metrics(
     tmp_path: Path,
 ) -> None:
-    evidence = _synthetic_evidence(tmp_path)
+    evidence = _synthetic_evidence(tmp_path, formal=True)
     kwargs = {
         "source_receipt": evidence["source_receipt"],
         "dataset_manifest": evidence["dataset_manifest"],
@@ -370,7 +412,7 @@ def test_finalizer_is_order_invariant_and_requires_identical_evaluator_metrics(
 def test_finalizer_rejects_tampered_frozen_inputs(
     tmp_path: Path, tamper: str, message: str
 ) -> None:
-    evidence = _synthetic_evidence(tmp_path)
+    evidence = _synthetic_evidence(tmp_path, formal=True)
     if tamper == "prediction":
         prediction = evidence["inference_receipt"].parent / "predictions.json"
         prediction.write_bytes(prediction.read_bytes() + b"tampered")
@@ -392,7 +434,7 @@ def test_finalizer_rejects_path_escape_in_evaluator_receipt(tmp_path: Path) -> N
     for unsafe_path in ("../../outside.json", "C:/outside.json", "..\\outside.json"):
         case_dir = tmp_path / hashlib.sha256(unsafe_path.encode()).hexdigest()[:8]
         case_dir.mkdir()
-        evidence = _synthetic_evidence(case_dir)
+        evidence = _synthetic_evidence(case_dir, formal=True)
         receipt = json.loads(evidence["evaluation_a"].read_text(encoding="utf-8"))
         receipt["evaluator"]["result"]["path"] = unsafe_path
         _write_json(evidence["evaluation_a"], receipt)
@@ -406,7 +448,7 @@ def test_finalizer_rejects_path_escape_in_evaluator_receipt(tmp_path: Path) -> N
 def test_finalizer_requires_source_archive_and_split_inventory_bindings(tmp_path: Path) -> None:
     missing_archives_dir = tmp_path / "missing-archives"
     missing_archives_dir.mkdir()
-    evidence = _synthetic_evidence(missing_archives_dir)
+    evidence = _synthetic_evidence(missing_archives_dir, formal=True)
     frozen = load_strict_json(evidence["frozen_image_manifest"])
     assert isinstance(frozen, dict)
     frozen.pop("source_archives")
@@ -422,10 +464,106 @@ def test_finalizer_requires_source_archive_and_split_inventory_bindings(tmp_path
 
     split_mismatch_dir = tmp_path / "split-mismatch"
     split_mismatch_dir.mkdir()
-    evidence = _synthetic_evidence(split_mismatch_dir)
+    evidence = _synthetic_evidence(split_mismatch_dir, formal=True)
     split = load_strict_json(evidence["split_inventory"])
     assert isinstance(split, dict)
     split["image_count"] = 999
     _write_json(evidence["split_inventory"], split)
     with pytest.raises(BDD100KFinalizeError, match="split inventory image count"):
         _finalize(evidence)
+
+
+def _formal_source_attestation() -> tuple[dict[str, Any], dict[str, Any]]:
+    source: dict[str, Any] = {
+        "schema_version": "roadsense.bdd100k-detection-source-receipt/v1",
+        "source_archives": [
+            {
+                "role": "images_val_zip",
+                "format": "zip",
+                "official_package_md5": finalizer_module.BDD100K_OFFICIAL_IMAGES_MD5,
+                "official_source_url": finalizer_module.BDD100K_OFFICIAL_SOURCE_PAGE,
+            },
+            {
+                "role": "det_20_labels",
+                "format": "zip",
+                "official_package_md5": finalizer_module.BDD100K_OFFICIAL_LABELS_MD5,
+                "official_source_url": finalizer_module.BDD100K_OFFICIAL_SOURCE_PAGE,
+            },
+        ],
+    }
+    dataset = {"source_url": finalizer_module.BDD100K_OFFICIAL_SOURCE_PAGE}
+    return source, dataset
+
+
+def test_formal_source_gate_rejects_wrong_md5_or_non_zip_labels() -> None:
+    source, dataset = _formal_source_attestation()
+    _validate_official_source_attestation(
+        source,
+        image_count=finalizer_module.BDD100K_OFFICIAL_IMAGE_COUNT,
+        dataset_manifest=dataset,
+    )
+
+    wrong_md5 = json.loads(json.dumps(source))
+    wrong_md5["source_archives"][1]["official_package_md5"] = "e72531b982bbb42efbaaf93223527284"
+    with pytest.raises(BDD100KFinalizeError, match="published official MD5"):
+        _validate_official_source_attestation(
+            wrong_md5,
+            image_count=finalizer_module.BDD100K_OFFICIAL_IMAGE_COUNT,
+            dataset_manifest=dataset,
+        )
+
+    missing_md5 = json.loads(json.dumps(source))
+    del missing_md5["source_archives"][0]["official_package_md5"]
+    with pytest.raises(BDD100KFinalizeError, match="published official MD5"):
+        _validate_official_source_attestation(
+            missing_md5,
+            image_count=finalizer_module.BDD100K_OFFICIAL_IMAGE_COUNT,
+            dataset_manifest=dataset,
+        )
+
+    non_zip = json.loads(json.dumps(source))
+    non_zip["source_archives"][1]["format"] = "json"
+    with pytest.raises(BDD100KFinalizeError, match="official ZIP"):
+        _validate_official_source_attestation(
+            non_zip,
+            image_count=finalizer_module.BDD100K_OFFICIAL_IMAGE_COUNT,
+            dataset_manifest=dataset,
+        )
+
+
+def test_formal_evaluator_gate_requires_pycocotools_and_result_file(tmp_path: Path) -> None:
+    fixture_dir = tmp_path / "formal-gate-test"
+    fixture_dir.mkdir()
+    evidence = _synthetic_evidence(fixture_dir, formal=True)
+    evaluation = json.loads(evidence["evaluation_a"].read_text(encoding="utf-8"))
+    base = evidence["evaluation_a"].parent
+    common = {
+        "base": base,
+        "expected_ground_truth_sha256": _sha_tag("det_val labels"),
+        "expected_image_manifest_sha256": evaluation["dataset"]["image_manifest_sha256"],
+        "expected_prediction_sha256": evaluation["prediction"]["sha256"],
+        "expected_image_count": finalizer_module.BDD100K_OFFICIAL_IMAGE_COUNT,
+    }
+    evaluation["evaluator"]["packages"].pop("pycocotools", None)
+
+    with pytest.raises(BDD100KFinalizeError, match="pycocotools==2.0.7"):
+        _validate_evaluator_receipt(evaluation, **common)
+
+    evaluation["evaluator"]["packages"]["pycocotools"] = "2.0.10"
+    with pytest.raises(BDD100KFinalizeError, match="pycocotools==2.0.7"):
+        _validate_evaluator_receipt(evaluation, **common)
+
+    evaluation["evaluator"]["packages"]["pycocotools"] = "2.0.7"
+    evaluation["evaluator"]["returncode"] = 0
+    evaluation["evaluator"]["timed_out"] = False
+    evaluation["evaluator"].pop("result_source", None)
+    with pytest.raises(BDD100KFinalizeError, match="result file"):
+        _validate_evaluator_receipt(evaluation, **common)
+
+    evaluation["evaluator"]["result_source"] = "stdout_fallback"
+    with pytest.raises(BDD100KFinalizeError, match="result file"):
+        _validate_evaluator_receipt(evaluation, **common)
+
+    evaluation["evaluator"]["result_source"] = "file"
+    accepted = _validate_evaluator_receipt(evaluation, **common)
+    assert accepted["packages"]["pycocotools"] == "2.0.7"

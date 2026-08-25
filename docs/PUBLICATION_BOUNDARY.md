@@ -41,3 +41,9 @@ and two matching official evaluator receipts exist, the public state remains
 out-of-domain baseline; it is not described as BDD-trained. A local `val`
 receipt is not a hidden-test leaderboard result, and it does not authorize
 claims about tracking or segmentation.
+
+If the Berkeley download endpoint yields a checksum/layout mismatch (for
+example, a community or development labels ZIP), the lane is explicitly
+**blocked**: keep the public state at `benchmark_claim_available=false` and do
+not substitute Kaggle labels or a reduced subset. The block is cleared only by
+the official package MD5 checks and the complete two-run evaluator receipt.

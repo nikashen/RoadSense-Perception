@@ -35,6 +35,18 @@ IMAGE_MANIFEST_SCHEMA = "roadsense.bdd100k-detection-images/v1"
 SPLIT_INVENTORY_SCHEMA = "roadsense.bdd100k-detection-split-inventory/v1"
 SOURCE_RECEIPT_SCHEMA = "roadsense.bdd100k-detection-source-receipt/v1"
 
+# Berkeley's published package checksums are part of the *formal* lane
+# contract, rather than optional hints.  The preparation API still accepts
+# caller-supplied checksums for small synthetic contract fixtures (where the
+# image count is intentionally below ``DEFAULT_EXPECTED_IMAGE_COUNT``), but a
+# real 10,000-image run must match these exact values.  In particular, merely
+# having a ``det_val.json`` member is not enough: Kaggle/community mirrors and
+# development subsets use the same filename and layout.
+BDD100K_OFFICIAL_IMAGES_MD5 = "5a0359c86a0b8713adab1eee9a3041cb"
+BDD100K_OFFICIAL_LABELS_MD5 = "b86a3e1b7edbcad421b7dad2b3987c94"
+BDD100K_OFFICIAL_IMAGES_ARCHIVE = "bdd100k_images_100k.zip"
+BDD100K_OFFICIAL_LABELS_ARCHIVE = "bdd100k_det_20_labels.zip"
+
 # The official package uses this layout for its validation members.
 # ``images/100k/val`` is accepted as the equivalent layout emitted by mirrors
 # which omit the top-level ``bdd100k`` directory.
@@ -61,13 +73,15 @@ BDD100K_DETECTION_CATEGORIES = (
     "traffic sign",
 )
 BDD100K_SOURCE_URL = "https://bdd-data.berkeley.edu/"
-# The Berkeley download page currently exposes these packages through its
-# official HTTP mirror.  The images package contains train/val/test; the
-# preparation step selects and hashes only ``images/100k/val``.  Keep the
-# source URLs in the local receipt so a future HTTPS portal can be substituted
-# only with a deliberate new receipt.
-BDD100K_IMAGES_VAL_URL = "http://128.32.162.150/bdd100k/bdd100k_images_100k.zip"
-BDD100K_DET20_VAL_LABELS_URL = "http://128.32.162.150/bdd100k/bdd100k_det_20_labels.zip"
+# The old Berkeley page exposed package links through a raw HTTP mirror
+# (128.32.162.150).  That endpoint is no longer a reliable content-addressed
+# source: in August 2026 the labels URL returned an unrelated image ZIP.  Do
+# not present the dead/mutable direct links as download instructions.  Receipts
+# record the Berkeley portal URL and rely on the official MD5 values above for
+# package identity; operators must obtain the bytes through the currently
+# authorised portal flow.
+BDD100K_IMAGES_VAL_URL = BDD100K_SOURCE_URL
+BDD100K_DET20_VAL_LABELS_URL = BDD100K_SOURCE_URL
 
 # The official val image package is large.  These are deliberately generous
 # limits that protect against malformed archives without excluding it.
@@ -493,6 +507,28 @@ def _prepare_bundle(
 
     images_md5 = _normalise_expected_md5(images_official_md5, option="--images-md5")
     labels_md5 = _normalise_expected_md5(labels_official_md5, option="--labels-md5")
+    if expected_image_count == DEFAULT_EXPECTED_IMAGE_COUNT:
+        # A formal receipt must be rooted in the checksum-identified Berkeley
+        # packages.  Without this check a Kaggle/development det_val JSON can
+        # satisfy the same filename/category/layout checks and later be
+        # mistaken for the official validation split.  Keep reduced fixture
+        # preparation permissive so the offline contract tests remain useful,
+        # but never allow a 10k bundle to proceed without both attestations.
+        if images_md5 != BDD100K_OFFICIAL_IMAGES_MD5:
+            raise BDDPreparationError(
+                "formal BDD100K val preparation requires the official images "
+                f"MD5 {BDD100K_OFFICIAL_IMAGES_MD5}"
+            )
+        if labels_md5 != BDD100K_OFFICIAL_LABELS_MD5:
+            raise BDDPreparationError(
+                "formal BDD100K val preparation requires the official det_20 labels "
+                f"MD5 {BDD100K_OFFICIAL_LABELS_MD5}"
+            )
+        if labels_input.suffix.lower() != ".zip":
+            raise BDDPreparationError(
+                "formal BDD100K val preparation requires the official labels ZIP; "
+                "an extracted/community det_val.json is development-only"
+            )
     images_source = _hash_file(images_zip, include_md5=images_md5 is not None)
     labels_source = _hash_file(labels_input, include_md5=labels_md5 is not None)
     _verify_official_md5(images_source[2], images_md5, role="images package")
@@ -699,6 +735,24 @@ def prepare_bdd100k_detection(
     )
 
 
+__all__ = [
+    "BDD100K_DET20_VAL_LABELS_URL",
+    "BDD100K_DETECTION_CATEGORIES",
+    "BDD100K_IMAGES_VAL_URL",
+    "BDD100K_OFFICIAL_IMAGES_ARCHIVE",
+    "BDD100K_OFFICIAL_IMAGES_MD5",
+    "BDD100K_OFFICIAL_LABELS_ARCHIVE",
+    "BDD100K_OFFICIAL_LABELS_MD5",
+    "BDD100K_SOURCE_URL",
+    "DEFAULT_EXPECTED_IMAGE_COUNT",
+    "IMAGE_MANIFEST_SCHEMA",
+    "SOURCE_RECEIPT_SCHEMA",
+    "SPLIT_INVENTORY_SCHEMA",
+    "BDDPreparationError",
+    "prepare_bdd100k_detection",
+]
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -718,7 +772,10 @@ def _build_parser() -> argparse.ArgumentParser:
         dest="labels_input",
         type=Path,
         required=True,
-        help="Official det_20 labels ZIP, or a local det_val.json file already extracted from it.",
+        help=(
+            "Official det_20 labels ZIP (required for the 10,000-image lane); "
+            "a local det_val.json is accepted only for reduced development fixtures."
+        ),
     )
     parser.add_argument(
         "--data-root",

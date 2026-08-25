@@ -26,6 +26,13 @@ preparation receipt records archive SHA-256, file inventory, label hash, and
 the explicit local licence acknowledgement. It never downloads or publishes
 the data.
 
+For the formal 10,000-image lane, preparation additionally verifies Berkeley's
+published MD5 for both the images and Detection 2020 labels ZIPs. URL strings
+are provenance hints only: the historical Berkeley raw mirror can be stale or
+misconfigured, and a Kaggle/community label export must never be promoted by
+copying the expected filename. Reduced local subsets remain development
+fixtures and carry no BDD benchmark claim.
+
 This detection lane is not a tracking/segmentation split and is not a hidden
 test leaderboard submission. Any future video task must retain sequence/video
 disjoint boundaries; random frame-level splits are prohibited because they

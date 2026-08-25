@@ -15,12 +15,15 @@ Do not create a benchmark release until all of the following are present:
 1. Current dataset terms reviewed and recorded.
 2. For the BDD lane, the official 10,000-image Detection 2020 `val` bundle
    passed `scripts/prepare_bdd100k_detection.py` with the explicit licence
-   acknowledgement and official package checksums.
+   acknowledgement and the published Berkeley MD5 values for both ZIPs.
+   A Kaggle/community `det_val.json` or a raw mirror URL without matching
+   checksums is not acceptable evidence.
 3. Archive/tree/ground-truth hashes and a frozen image manifest are bound to
    the model, ontology adapter, inference configuration, and predictions.
 4. Two independent runs of the pinned official BDD devkit completed with
-   finite metrics, distinct run IDs, and byte-for-byte identical aggregate
-   metrics. See [BDD100K benchmark](BDD100K_BENCHMARK.md).
+   finite metrics, distinct run IDs, byte-for-byte identical aggregate
+   metrics, and an evaluator lock containing `pycocotools==2.0.7`. See
+   [BDD100K benchmark](BDD100K_BENCHMARK.md).
 5. A sanitized receipt passes
    `scripts/verify_bdd100k_detection_benchmark.py`; it contains no local
    paths, raw predictions, labels, images, or private weights.

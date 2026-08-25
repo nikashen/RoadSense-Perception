@@ -137,8 +137,10 @@ and it never fabricates the `rider` or `traffic sign` classes.
 See [BDD100K benchmark](docs/BDD100K_BENCHMARK.md) for the exact commands and
 licence boundary. No BDD images, labels, predictions, private weights, or
 absolute paths are committed. Until a licensed operator supplies the official
-data and the finalizer succeeds, this repository has no public BDD metric
-claim; the Pages workbench remains the deterministic fixture.
+data (including both published package checksums) and the finalizer succeeds,
+this repository has no public BDD metric claim; the Pages workbench remains
+the deterministic fixture. A stale Berkeley mirror response, Kaggle label
+export, or development subset is a blocked input—not a benchmark result.
 
 The repository now includes an explicit local-data entry point for that plan.
 `roadsense evaluate-local` consumes a strict sequence-aware JSON spec and

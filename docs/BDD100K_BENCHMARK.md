@@ -30,6 +30,24 @@ The preparation script also records SHA-256 and validates the complete
 10,000-image `images/100k/val` inventory. These values are provenance checks,
 not permission to redistribute the dataset.
 
+The Berkeley portal's historical raw mirror (`128.32.162.150`) is not a
+content-addressed API and must not be treated as proof of identity. In
+particular, a stale/misconfigured labels link has returned a different ZIP in
+the past. The formal preparation command therefore requires both MD5 values
+and a ZIP labels package; an extracted `det_val.json`, Kaggle export, or
+community subset is development-only and is rejected for the 10,000-image
+lane. The receipt records the Berkeley portal URL for provenance, while the
+MD5 values—not the URL—identify the bytes.
+
+During the August 2026 validation, the mirror's image ZIP was complete and
+readable but hashed to `c7a1d4db9af5a4691d5f6fee2a62e132`, rather than the
+published image MD5. The mirror's labels URL returned a 231,196,019-byte ZIP
+of JPEG files with MD5 `e72531b982bbb42efbaaf93223527284`, not a labels
+archive. The official labels MD5 remains documented in the pinned upstream
+devkit documentation, but no reachable source in this run produced those
+bytes. Consequently, no formal BDD metric or benchmark release is implied by
+the development evaluator smoke records.
+
 ## Reproduction stages
 
 Run each stage with the project environment. The paths below are examples and
@@ -57,12 +75,16 @@ $py = ".\.venv\Scripts\python.exe"
   --output-dir runs\bdd100k_val\inference
 
 # Run this command twice in independent output directories/environments.
+# The evaluator environment must contain pycocotools==2.0.7.  The tested
+# 2.0.9/2.0.10 releases are incompatible with the pinned bdd100k/scalabel
+# path; the formal lane deliberately pins the known-good 2.0.7 build.
 & $py scripts\run_bdd100k_detection_benchmark.py evaluate `
   --ground-truth data\raw\bdd100k_detection_2020_val\labels\det_val.json `
   --predictions runs\bdd100k_val\inference\predictions.json `
   --image-manifest runs\bdd100k_val\frozen-image-manifest.json `
   --evaluator-python D:\bdd-eval-venv\Scripts\python.exe `
   --evaluator-cwd D:\bdd100k-devkit-9ac17c6c `
+  --role independent_a `
   --output-dir runs\bdd100k_val\evaluate-a
 
 & $py scripts\run_bdd100k_detection_benchmark.py evaluate `
@@ -71,6 +93,7 @@ $py = ".\.venv\Scripts\python.exe"
   --image-manifest runs\bdd100k_val\frozen-image-manifest.json `
   --evaluator-python D:\bdd-eval-venv\Scripts\python.exe `
   --evaluator-cwd D:\bdd100k-devkit-9ac17c6c `
+  --role independent_b `
   --output-dir runs\bdd100k_val\evaluate-b
 
 & $py scripts\finalize_bdd100k_detection_benchmark.py `
@@ -92,6 +115,21 @@ directory; it has no ground-truth argument. The evaluator is an external
 Python process pinned to the devkit commit. Every stage writes hashes and
 relative artifact names. The final receipt contains only aggregate finite
 metrics and hash bindings.
+
+For a formal 10,000-image run, evaluator receipts must record
+`pycocotools==2.0.7`, `returncode=0`, `timed_out=false`, and a parsed result
+file (stdout fallback is not publishable). Small synthetic evaluator fixtures
+used by contract tests intentionally do not satisfy the formal publication
+gate.
+
+The evaluator environment is a separate, non-editable installation of the
+official devkit source at the commit above. The source archive used during
+development was SHA-256
+`0b1b3b40cd17bb4d7c9be0a0014aac60fc007ca4d7855a0237a52042ec8c193a`; the
+known-good runtime includes `bdd100k==1.0.0`, `scalabel==0.3.1`,
+`numpy==1.26.4`, `pydantic==1.10.15`, `motmetrics==1.4.0`, and
+`pycocotools==2.0.7`. These versions describe the tested evaluator runtime;
+the virtual environment itself is local-only and must not be committed.
 
 ## Model interpretation
 

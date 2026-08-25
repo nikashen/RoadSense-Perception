@@ -29,6 +29,9 @@ BDD100K_DETECTION_SCOPE = "BDD100K Detection 2020 validation"
 BDD100K_DEVKIT_ID = "bdd100k-devkit"
 BDD100K_DEVKIT_REPOSITORY = "bdd100k/bdd100k"
 BDD100K_DEVKIT_COMMIT = "9ac17c6c7c51d2fc83065fccd707cd5b1882a293"
+BDD100K_OFFICIAL_IMAGE_COUNT = 10_000
+BDD100K_OFFICIAL_IMAGES_MD5 = "5a0359c86a0b8713adab1eee9a3041cb"
+BDD100K_OFFICIAL_LABELS_MD5 = "b86a3e1b7edbcad421b7dad2b3987c94"
 
 _REPORT_ID_PATTERN = r"^[0-9a-f]{64}$"
 _IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9._-]{1,127}$")
@@ -131,6 +134,9 @@ class BDD100KDatasetProvenance(StrictModel):
     task: Literal["detection"]
     release: Literal["2020"]
     split: Literal["val"]
+    image_count: Literal[10_000]
+    images_package_md5: Literal["5a0359c86a0b8713adab1eee9a3041cb"]
+    labels_package_md5: Literal["b86a3e1b7edbcad421b7dad2b3987c94"]
     archive_sha256: str = Field(pattern=SHA256.pattern)
     tree_sha256: str = Field(pattern=SHA256.pattern)
     ground_truth_sha256: str = Field(pattern=SHA256.pattern)
@@ -357,6 +363,9 @@ __all__ = [
     "BDD100K_DEVKIT_COMMIT",
     "BDD100K_DEVKIT_ID",
     "BDD100K_DEVKIT_REPOSITORY",
+    "BDD100K_OFFICIAL_IMAGES_MD5",
+    "BDD100K_OFFICIAL_IMAGE_COUNT",
+    "BDD100K_OFFICIAL_LABELS_MD5",
     "BDD100KBenchmarkReceiptError",
     "BDD100KDatasetProvenance",
     "BDD100KDependencyProvenance",
