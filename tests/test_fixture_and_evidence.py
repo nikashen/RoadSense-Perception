@@ -60,6 +60,34 @@ def test_fixture_vehicles_follow_perspective_lanes_instead_of_sliding_sideways()
         assert abs(centers_x[-1] - centers_x[0]) < bottom_centers[-1] - bottom_centers[0]
 
 
+def test_all_rendered_cars_keep_their_ground_edge_inside_the_road() -> None:
+    payload = build_demo_payload()
+    frames = payload["frames"]
+    assert isinstance(frames, list)
+
+    for frame in frames:
+        road = next(segment for segment in frame["segments"] if segment["label"] == "road")
+        polygon = road["polygon"]
+        for item in frame["objects"]:
+            if item["label"] != "car":
+                continue
+            x, y, width, height = item["bbox"]
+            ground_y = y + height
+            intersections: list[float] = []
+            closed_polygon = [*polygon, polygon[0]]
+            for start, end in pairwise(closed_polygon):
+                x1, y1 = start
+                x2, y2 = end
+                if y1 == y2 or not min(y1, y2) <= ground_y <= max(y1, y2):
+                    continue
+                progress = (ground_y - y1) / (y2 - y1)
+                intersections.append(x1 + (x2 - x1) * progress)
+            assert len(intersections) >= 2
+            left, right = min(intersections), max(intersections)
+            assert left <= x
+            assert x + width <= right
+
+
 def test_fixture_segmentation_ontology_matches_raster_classes() -> None:
     report = build_fixture_metrics()["segmentation"]
     assert len(report["per_class_iou"]) == 5  # type: ignore[index]

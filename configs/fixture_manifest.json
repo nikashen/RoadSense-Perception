@@ -1,6 +1,6 @@
 {
   "schema_version": "roadsense.dataset-manifest/v1",
-  "dataset_name": "RoadSense deterministic city-loop fixture v2",
+  "dataset_name": "RoadSense deterministic city-loop fixture v3",
   "source_url": "repository://src/roadsense/fixture.py",
   "license_id": "MIT-generated-fixture",
   "tasks": [
@@ -11,8 +11,8 @@
   "splits": {
     "interactive": "24 generated frames; no train/test interpretation"
   },
-  "content_sha256": "5358bb72f4a375246beb45986978a050b28976cd9218f472bbb6fcacfeb552f1",
+  "content_sha256": "5a9d4168d7f1c3f73ab3ac25425d465dd1bed1100840b79949b7bbdf69ca3601",
   "evaluation_authorized": false,
   "frozen": false,
-  "notes": "Canonical SHA-256 of the deterministic build_demo_payload() JSON. Vehicle tracks follow perspective lane centerlines; this is a fixture identity, not a dataset benchmark or model artifact hash."
+  "notes": "Canonical SHA-256 of the deterministic build_demo_payload() JSON. Vehicle tracks and low-confidence false positives remain inside the perspective road footprint; this is a fixture identity, not a dataset benchmark or model artifact hash."
 }

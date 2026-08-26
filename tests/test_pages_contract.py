@@ -72,17 +72,18 @@ def test_pages_build_contains_relative_fixture_contract() -> None:
         assert manifest["runtime"] == "deterministic_geometric_fixture"
         assert manifest["benchmark_claim_available"] is False
         assert manifest["fixture"] == {
-            "fixture_id": "roadsense-city-loop-v2",
+            "fixture_id": "roadsense-city-loop-v3",
             "frame_count": 24,
             "canvas": {"width": 960, "height": 540},
             "cadence_ms": 100,
-            "payload_sha256": "5358bb72f4a375246beb45986978a050b28976cd9218f472bbb6fcacfeb552f1",
+            "payload_sha256": "5a9d4168d7f1c3f73ab3ac25425d465dd1bed1100840b79949b7bbdf69ca3601",
         }
         demo = json.loads((built / "demo.json").read_text(encoding="utf-8"))
-        assert demo["fixture_id"] == "roadsense-city-loop-v2"
+        assert demo["fixture_id"] == "roadsense-city-loop-v3"
         assert len(demo["frames"]) == 24
         assert demo["evidence"]["benchmark_claim_available"] is False
         assert "Array.from({ length: 24 }" in app_source
+        assert "SCENE_OBJECT_MIN_CONFIDENCE" in app_source
         assert "api_unavailable:" in app_source
         assert "dataset.label" in app_source
         assert all((built / asset).is_file() for asset in manifest["assets"])

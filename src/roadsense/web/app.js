@@ -8,6 +8,8 @@
   const FIXTURE_CADENCE_MS = 100;
   const ROAD_BOTTOM = 540;
   const ROAD_HORIZON = 250;
+  const ROAD_VANISH_X = 481;
+  const SCENE_OBJECT_MIN_CONFIDENCE = 0.5;
 
   const COLORS = Object.freeze({
     car: "#b8ef67",
@@ -516,7 +518,7 @@
     });
 
     return {
-      fixtureId: "roadsense-emergency-fallback-v2",
+      fixtureId: "roadsense-emergency-fallback-v3",
       schemaVersion: "roadsense.demo/v1",
       source: "deterministic_geometric_fixture",
       evidence: {
@@ -598,7 +600,10 @@
       drawSegments(context, frame.segments);
     }
 
+    // Low-confidence injected false positives remain overlay candidates, but
+    // they must not materialize as physical actors in the synthetic scene.
     [...frame.detections]
+      .filter((item) => item.confidence >= SCENE_OBJECT_MIN_CONFIDENCE)
       .sort((a, b) => a.bbox[1] + a.bbox[3] - (b.bbox[1] + b.bbox[3]))
       .forEach((item) => drawSceneObject(context, item));
 
@@ -834,28 +839,9 @@
 
     if (item.className === "car" || item.className === "bus") {
       const isBus = item.className === "bus";
-      const bodyColor = item.trackId === "T-01" ? "#314d5a" : isBus ? "#416c72" : "#8e7759";
-      context.fillStyle = "rgba(0,0,0,0.24)";
-      context.beginPath();
-      context.ellipse(x + width / 2, y + height + 2, width * 0.46, height * 0.11, 0, 0, Math.PI * 2);
-      context.fill();
-      context.fillStyle = bodyColor;
-      roundedRect(context, x + width * 0.05, y + height * 0.3, width * 0.9, height * 0.58, Math.max(3, width * 0.07));
-      context.fill();
-      context.fillStyle = "#8eaaa8";
-      roundedRect(context, x + width * 0.2, y + height * 0.08, width * 0.58, height * 0.38, Math.max(2, width * 0.05));
-      context.fill();
-      context.fillStyle = bodyColor;
-      context.fillRect(x + width * 0.47, y + height * 0.1, width * 0.06, height * 0.34);
-      context.fillStyle = "#17201f";
-      context.beginPath();
-      context.arc(x + width * 0.24, y + height * 0.87, Math.max(3, height * 0.11), 0, Math.PI * 2);
-      context.arc(x + width * 0.77, y + height * 0.87, Math.max(3, height * 0.11), 0, Math.PI * 2);
-      context.fill();
-      context.fillStyle = "#f2c876";
-      context.globalAlpha = 0.72;
-      context.fillRect(x + width * 0.1, y + height * 0.5, width * 0.06, height * 0.12);
-      context.fillRect(x + width * 0.84, y + height * 0.5, width * 0.06, height * 0.12);
+      const primaryTrack = item.trackId === "1" || item.trackId === "T-01";
+      const bodyColor = primaryTrack ? "#314d5a" : isBus ? "#416c72" : "#8e7759";
+      drawRoadVehicle(context, item, bodyColor, isBus);
     } else if (item.className === "pedestrian") {
       context.fillStyle = "#c98d54";
       context.beginPath();
@@ -900,6 +886,127 @@
     }
 
     context.restore();
+  }
+
+  function drawRoadVehicle(context, item, bodyColor, isBus) {
+    const [x, y, width, height] = item.bbox;
+    const rearCenter = { x: x + width / 2, y: y + height * 0.9 };
+    const headingX = ROAD_VANISH_X - rearCenter.x;
+    const headingY = ROAD_HORIZON - rearCenter.y;
+    const headingLength = Math.max(1, Math.hypot(headingX, headingY));
+    const forward = { x: headingX / headingLength, y: headingY / headingLength };
+    const right = { x: -forward.y, y: forward.x };
+    const bodyLength = height * (isBus ? 0.88 : 0.84);
+    const rearHalfWidth = Math.min(
+      width * (isBus ? 0.38 : 0.31),
+      height * (isBus ? 0.48 : 0.38),
+    );
+    const frontHalfWidth = rearHalfWidth * (isBus ? 0.82 : 0.64);
+    const frontCenter = offsetPoint(rearCenter, forward, bodyLength);
+    const body = [
+      offsetPoint(rearCenter, right, -rearHalfWidth),
+      offsetPoint(rearCenter, right, rearHalfWidth),
+      offsetPoint(frontCenter, right, frontHalfWidth),
+      offsetPoint(frontCenter, right, -frontHalfWidth),
+    ];
+    const crossAngle = Math.atan2(forward.y, forward.x) + Math.PI / 2;
+
+    context.fillStyle = "rgba(0,0,0,0.24)";
+    context.beginPath();
+    context.ellipse(
+      rearCenter.x - forward.x * height * 0.08,
+      rearCenter.y - forward.y * height * 0.08,
+      rearHalfWidth * 1.12,
+      Math.max(2, height * 0.1),
+      crossAngle,
+      0,
+      Math.PI * 2,
+    );
+    context.fill();
+
+    drawPolygonPath(context, body);
+    context.fillStyle = bodyColor;
+    context.fill();
+    context.strokeStyle = "rgba(12,28,27,0.72)";
+    context.lineWidth = Math.max(1.2, height * 0.035);
+    context.stroke();
+
+    const windowRear = offsetPoint(rearCenter, forward, bodyLength * 0.43);
+    const windowFront = offsetPoint(rearCenter, forward, bodyLength * 0.76);
+    const windowRearHalf = rearHalfWidth * 0.62;
+    const windowFrontHalf = frontHalfWidth * 0.76;
+    drawPolygonPath(context, [
+      offsetPoint(windowRear, right, -windowRearHalf),
+      offsetPoint(windowRear, right, windowRearHalf),
+      offsetPoint(windowFront, right, windowFrontHalf),
+      offsetPoint(windowFront, right, -windowFrontHalf),
+    ]);
+    context.fillStyle = "#8eaaa8";
+    context.fill();
+    context.strokeStyle = "rgba(224,239,232,0.34)";
+    context.lineWidth = 1;
+    context.stroke();
+
+    const wheelLongRadius = Math.max(2.5, height * 0.1);
+    const wheelShortRadius = Math.max(1.3, height * 0.035);
+    const headingAngle = Math.atan2(forward.y, forward.x);
+    context.fillStyle = "#17201f";
+    for (const direction of [-1, 1]) {
+      const wheel = offsetPoint(
+        offsetPoint(rearCenter, forward, bodyLength * 0.12),
+        right,
+        direction * rearHalfWidth * 0.92,
+      );
+      context.beginPath();
+      context.ellipse(
+        wheel.x,
+        wheel.y,
+        wheelLongRadius,
+        wheelShortRadius,
+        headingAngle,
+        0,
+        Math.PI * 2,
+      );
+      context.fill();
+    }
+
+    const rearPanel = offsetPoint(rearCenter, forward, bodyLength * 0.1);
+    context.fillStyle = "#ef7a68";
+    for (const direction of [-1, 1]) {
+      const light = offsetPoint(rearPanel, right, direction * rearHalfWidth * 0.66);
+      context.beginPath();
+      context.arc(light.x, light.y, Math.max(1.5, height * 0.045), 0, Math.PI * 2);
+      context.fill();
+    }
+
+    const headingCenter = offsetPoint(rearCenter, forward, bodyLength * 0.56);
+    const headingTip = offsetPoint(headingCenter, forward, height * 0.1);
+    const headingLeft = offsetPoint(headingCenter, right, -height * 0.07);
+    const headingRight = offsetPoint(headingCenter, right, height * 0.07);
+    context.strokeStyle = "rgba(231,244,235,0.72)";
+    context.lineWidth = Math.max(1.2, height * 0.03);
+    context.lineCap = "round";
+    context.beginPath();
+    context.moveTo(headingLeft.x, headingLeft.y);
+    context.lineTo(headingTip.x, headingTip.y);
+    context.lineTo(headingRight.x, headingRight.y);
+    context.stroke();
+  }
+
+  function offsetPoint(point, direction, distance) {
+    return {
+      x: point.x + direction.x * distance,
+      y: point.y + direction.y * distance,
+    };
+  }
+
+  function drawPolygonPath(context, points) {
+    context.beginPath();
+    points.forEach((point, index) => {
+      if (index === 0) context.moveTo(point.x, point.y);
+      else context.lineTo(point.x, point.y);
+    });
+    context.closePath();
   }
 
   function drawTrackTrails(context, visible) {

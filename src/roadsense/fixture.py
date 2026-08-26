@@ -21,8 +21,16 @@ SEGMENTATION_WIDTH = 160
 SEGMENTATION_HEIGHT = 90
 
 CATEGORY_LABELS = {1: "car", 2: "pedestrian", 3: "cyclist"}
-FIXTURE_ID = "roadsense-city-loop-v2"
+FIXTURE_ID = "roadsense-city-loop-v3"
 VEHICLE_TRACK_IDS = (101, 102)
+ROAD_HORIZON_Y = 250.0
+ROAD_BOTTOM_Y = 540.0
+ROAD_TOP_LEFT_X = 419.0
+ROAD_TOP_RIGHT_X = 543.0
+ROAD_BOTTOM_LEFT_X = 236.0
+ROAD_BOTTOM_RIGHT_X = 779.0
+ROAD_TOP_CENTER_X = 481.0
+ROAD_BOTTOM_CENTER_X = 503.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,10 +63,10 @@ def _lane_vehicle_box(
     height = width * 0.58
 
     # These display-space edges match the road polygon rendered by app.js.
-    road_progress = (bottom - 250.0) / (DEMO_HEIGHT - 250.0)
-    road_center = 481.0 + 22.0 * road_progress
-    left_edge = 419.0 - 183.0 * road_progress
-    right_edge = 543.0 + 236.0 * road_progress
+    road_progress = (bottom - ROAD_HORIZON_Y) / (ROAD_BOTTOM_Y - ROAD_HORIZON_Y)
+    road_center = ROAD_TOP_CENTER_X + (ROAD_BOTTOM_CENTER_X - ROAD_TOP_CENTER_X) * road_progress
+    left_edge = ROAD_TOP_LEFT_X + (ROAD_BOTTOM_LEFT_X - ROAD_TOP_LEFT_X) * road_progress
+    right_edge = ROAD_TOP_RIGHT_X + (ROAD_BOTTOM_RIGHT_X - ROAD_TOP_RIGHT_X) * road_progress
     if lane == "left":
         center_x = road_center - (road_center - left_edge) * lane_fraction
     elif lane == "right":
@@ -160,7 +168,15 @@ def _prediction_detections(frame_index: int, truth: tuple[Detection, ...]) -> tu
                 category_id=1,
                 label="car",
                 score=0.38,
-                bbox=_box(444 - frame_index, 174, 55, 36),
+                bbox=_lane_vehicle_box(
+                    frame_index,
+                    lane="right",
+                    start_bottom=286.0,
+                    end_bottom=330.0,
+                    start_width=42.0,
+                    end_width=58.0,
+                    lane_fraction=0.62,
+                ),
             )
         )
     return tuple(predictions)
@@ -266,12 +282,41 @@ def _object_payload(detection: Detection) -> dict[str, object]:
     }
 
 
+def _road_bounds_at_display_y(y: float) -> tuple[float, float]:
+    if not ROAD_HORIZON_Y <= y <= ROAD_BOTTOM_Y:
+        raise RuntimeError("vehicle ground contact must lie within the rendered road depth")
+    progress = (y - ROAD_HORIZON_Y) / (ROAD_BOTTOM_Y - ROAD_HORIZON_Y)
+    left = ROAD_TOP_LEFT_X + (ROAD_BOTTOM_LEFT_X - ROAD_TOP_LEFT_X) * progress
+    right = ROAD_TOP_RIGHT_X + (ROAD_BOTTOM_RIGHT_X - ROAD_TOP_RIGHT_X) * progress
+    return left, right
+
+
+def _validate_vehicle_road_placement(objects: list[dict[str, object]]) -> None:
+    for item in objects:
+        if item.get("label") != "car":
+            continue
+        bbox = item.get("bbox")
+        if not isinstance(bbox, list) or len(bbox) != 4:
+            raise RuntimeError("vehicle display bbox is invalid")
+        if not all(isinstance(value, (int, float)) for value in bbox):
+            raise RuntimeError("vehicle display bbox must be numeric")
+        x, y, width, height = (float(value) for value in bbox)
+        left, right = _road_bounds_at_display_y(y + height)
+        if x < left or x + width > right:
+            raise RuntimeError("vehicle display bbox leaves the rendered road at ground contact")
+
+
 def _road_segments() -> list[dict[str, object]]:
     return [
         {
             "label": "road",
             "category_id": 1,
-            "polygon": [[236, 540], [419, 250], [543, 250], [779, 540]],
+            "polygon": [
+                [ROAD_BOTTOM_LEFT_X, ROAD_BOTTOM_Y],
+                [ROAD_TOP_LEFT_X, ROAD_HORIZON_Y],
+                [ROAD_TOP_RIGHT_X, ROAD_HORIZON_Y],
+                [ROAD_BOTTOM_RIGHT_X, ROAD_BOTTOM_Y],
+            ],
             "confidence": 0.96,
         },
         {
@@ -294,12 +339,14 @@ def build_demo_payload(bundle: FixtureBundle | None = None) -> dict[str, object]
     metrics = build_fixture_metrics(selected)
     frames = []
     for frame in selected.prediction_frames:
+        objects = [_object_payload(detection) for detection in frame.detections]
+        _validate_vehicle_road_placement(objects)
         frames.append(
             {
                 "id": f"frame-{frame.frame_index:03d}",
                 "frame_index": frame.frame_index,
                 "timestamp_ms": frame.timestamp_ms,
-                "objects": [_object_payload(detection) for detection in frame.detections],
+                "objects": objects,
                 "segments": _road_segments(),
             }
         )
