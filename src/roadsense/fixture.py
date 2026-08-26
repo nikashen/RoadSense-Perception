@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import combinations
+from typing import cast
 
 import numpy as np
 from numpy.typing import NDArray
@@ -21,7 +23,7 @@ SEGMENTATION_WIDTH = 160
 SEGMENTATION_HEIGHT = 90
 
 CATEGORY_LABELS = {1: "car", 2: "pedestrian", 3: "cyclist"}
-FIXTURE_ID = "roadsense-city-loop-v3"
+FIXTURE_ID = "roadsense-city-loop-v4"
 VEHICLE_TRACK_IDS = (101, 102)
 ROAD_HORIZON_Y = 250.0
 ROAD_BOTTOM_Y = 540.0
@@ -124,7 +126,7 @@ def _truth_detections(frame_index: int) -> tuple[Detection, ...]:
                 category_id=2,
                 label="pedestrian",
                 track_id=201,
-                bbox=_box(292 + frame_index * 2.0, 178 + frame_index * 1.2, 24, 68),
+                bbox=_box(535 - frame_index * 1.2, 178 + frame_index * 1.2, 24, 68),
             )
         )
     if 9 <= frame_index <= 23:
@@ -133,7 +135,7 @@ def _truth_detections(frame_index: int) -> tuple[Detection, ...]:
                 category_id=3,
                 label="cyclist",
                 track_id=301,
-                bbox=_box(92 + frame_index * 7.0, 188, 47, 72),
+                bbox=_box(82 + frame_index * 5.0, 188, 47, 72),
             )
         )
     return tuple(detections)
@@ -306,6 +308,41 @@ def _validate_vehicle_road_placement(objects: list[dict[str, object]]) -> None:
             raise RuntimeError("vehicle display bbox leaves the rendered road at ground contact")
 
 
+def _numeric_bbox(item: dict[str, object]) -> tuple[float, float, float, float]:
+    bbox = item.get("bbox")
+    if not isinstance(bbox, list) or len(bbox) != 4:
+        raise RuntimeError("actor display bbox is invalid")
+    if not all(isinstance(value, (int, float)) for value in bbox):
+        raise RuntimeError("actor display bbox must be numeric")
+    numeric_bbox = cast(list[int | float], bbox)
+    x, y, width, height = numeric_bbox
+    return float(x), float(y), float(width), float(height)
+
+
+def _validate_actor_separation(objects: list[dict[str, object]]) -> None:
+    visible: list[dict[str, object]] = []
+    for item in objects:
+        confidence = item.get("confidence")
+        if isinstance(confidence, (int, float)) and float(confidence) >= 0.5:
+            visible.append(item)
+    for first, second in combinations(visible, 2):
+        labels = {first.get("label"), second.get("label")}
+        if "car" not in labels or labels.isdisjoint({"pedestrian", "cyclist"}):
+            continue
+        first_x, first_y, first_width, first_height = _numeric_bbox(first)
+        second_x, second_y, second_width, second_height = _numeric_bbox(second)
+        overlap_width = max(
+            0.0,
+            min(first_x + first_width, second_x + second_width) - max(first_x, second_x),
+        )
+        overlap_height = max(
+            0.0,
+            min(first_y + first_height, second_y + second_height) - max(first_y, second_y),
+        )
+        if overlap_width * overlap_height > 0.0:
+            raise RuntimeError("visible vehicle and vulnerable-road-user actors overlap")
+
+
 def _road_segments() -> list[dict[str, object]]:
     return [
         {
@@ -341,6 +378,7 @@ def build_demo_payload(bundle: FixtureBundle | None = None) -> dict[str, object]
     for frame in selected.prediction_frames:
         objects = [_object_payload(detection) for detection in frame.detections]
         _validate_vehicle_road_placement(objects)
+        _validate_actor_separation(objects)
         frames.append(
             {
                 "id": f"frame-{frame.frame_index:03d}",

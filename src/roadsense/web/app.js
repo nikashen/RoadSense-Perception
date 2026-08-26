@@ -8,7 +8,6 @@
   const FIXTURE_CADENCE_MS = 100;
   const ROAD_BOTTOM = 540;
   const ROAD_HORIZON = 250;
-  const ROAD_VANISH_X = 481;
   const SCENE_OBJECT_MIN_CONFIDENCE = 0.5;
 
   const COLORS = Object.freeze({
@@ -451,7 +450,7 @@
           laneVehicleBox(index, "left", 305, 360, 55, 78, 0.28),
           index,
         ),
-        detection("T-07", "pedestrian", 0.91 - Math.abs(index - 5) * 0.009, [774 - index * 25, 357 + index * 0.8, 27, 67], index, index > 7 ? "partial" : "none"),
+        detection("T-07", "pedestrian", 0.91 - Math.abs(index - 5) * 0.009, [815 - index * 1.4, 300 + index * 0.8, 27, 67], index),
         detection("T-20", "traffic light", 0.73 + (index % 3) * 0.02, [668, 174, 23, 48], index),
       ];
 
@@ -470,7 +469,7 @@
 
       if (index >= 3) {
         detections.push(
-          detection("T-12", "cyclist", 0.68 + (index - 3) * 0.019, [204 + index * 17.5, 363 - index * 0.9, 48, 59], index),
+          detection("T-12", "cyclist", 0.68 + (index - 3) * 0.019, [125 + index * 8, 350 - index * 0.5, 48, 59], index),
         );
       }
 
@@ -518,7 +517,7 @@
     });
 
     return {
-      fixtureId: "roadsense-emergency-fallback-v3",
+      fixtureId: "roadsense-emergency-fallback-v4",
       schemaVersion: "roadsense.demo/v1",
       source: "deterministic_geometric_fixture",
       evidence: {
@@ -891,11 +890,8 @@
   function drawRoadVehicle(context, item, bodyColor, isBus) {
     const [x, y, width, height] = item.bbox;
     const rearCenter = { x: x + width / 2, y: y + height * 0.9 };
-    const headingX = ROAD_VANISH_X - rearCenter.x;
-    const headingY = ROAD_HORIZON - rearCenter.y;
-    const headingLength = Math.max(1, Math.hypot(headingX, headingY));
-    const forward = { x: headingX / headingLength, y: headingY / headingLength };
-    const right = { x: -forward.y, y: forward.x };
+    const forward = { x: 0, y: -1 };
+    const right = { x: 1, y: 0 };
     const bodyLength = height * (isBus ? 0.88 : 0.84);
     const rearHalfWidth = Math.min(
       width * (isBus ? 0.38 : 0.31),

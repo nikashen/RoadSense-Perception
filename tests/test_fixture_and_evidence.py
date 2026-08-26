@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from itertools import pairwise
+from itertools import combinations, pairwise
 
 import pytest
 
@@ -86,6 +86,30 @@ def test_all_rendered_cars_keep_their_ground_edge_inside_the_road() -> None:
             left, right = min(intersections), max(intersections)
             assert left <= x
             assert x + width <= right
+
+
+def test_visible_cars_do_not_overlap_pedestrians_or_cyclists() -> None:
+    payload = build_demo_payload()
+    frames = payload["frames"]
+    assert isinstance(frames, list)
+
+    for frame in frames:
+        visible = [item for item in frame["objects"] if item["confidence"] >= 0.5]
+        for first, second in combinations(visible, 2):
+            labels = {first["label"], second["label"]}
+            if "car" not in labels or labels.isdisjoint({"pedestrian", "cyclist"}):
+                continue
+            first_x, first_y, first_width, first_height = first["bbox"]
+            second_x, second_y, second_width, second_height = second["bbox"]
+            overlap_width = max(
+                0,
+                min(first_x + first_width, second_x + second_width) - max(first_x, second_x),
+            )
+            overlap_height = max(
+                0,
+                min(first_y + first_height, second_y + second_height) - max(first_y, second_y),
+            )
+            assert overlap_width * overlap_height == 0
 
 
 def test_fixture_segmentation_ontology_matches_raster_classes() -> None:
