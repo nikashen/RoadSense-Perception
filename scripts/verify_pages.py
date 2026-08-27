@@ -5,9 +5,14 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
+import re
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urlparse
+
+_GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
+_APPLICATION_VERSION = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:\.dev[0-9]+)?$")
 
 
 class _AssetReferenceParser(HTMLParser):
@@ -66,6 +71,24 @@ def verify(root: Path) -> dict[str, object]:
     for key, expected in expected_flags.items():
         if manifest.get(key) != expected:
             raise ValueError(f"Pages manifest has invalid {key}")
+    application_version = manifest.get("application_version")
+    if not isinstance(application_version, str) or not _APPLICATION_VERSION.fullmatch(
+        application_version
+    ):
+        raise ValueError("Pages manifest application_version is invalid")
+    source_commit = manifest.get("source_commit")
+    source_tree_state = manifest.get("source_tree_state")
+    if source_commit != "unknown" and (
+        not isinstance(source_commit, str) or not _GIT_SHA.fullmatch(source_commit)
+    ):
+        raise ValueError("Pages manifest source_commit is invalid")
+    if source_tree_state not in {"clean", "dirty", "unknown"}:
+        raise ValueError("Pages manifest source_tree_state is invalid")
+    expected_sha = os.getenv("ROADSENSE_SOURCE_SHA", "").lower()
+    if _GIT_SHA.fullmatch(expected_sha) and (
+        source_commit != expected_sha or source_tree_state != "clean"
+    ):
+        raise ValueError("Pages manifest does not bind the clean GitHub source commit")
 
     assets = manifest.get("assets")
     asset_hashes = manifest.get("asset_sha256")
@@ -114,16 +137,19 @@ def verify(root: Path) -> dict[str, object]:
     except (OSError, UnicodeError) as exc:
         raise ValueError(f"Pages index is unreadable: {exc}") from exc
     references = set(parser.references)
+    parsed_references = {reference: urlparse(reference) for reference in references}
+    reference_paths = {parsed.path for parsed in parsed_references.values()}
     required_references = {"app.js", "styles.css", "favicon.svg"}
-    if references != required_references:
+    if reference_paths != required_references:
         raise ValueError(
-            f"Pages index references {sorted(references)!r}; expected "
+            f"Pages index references {sorted(reference_paths)!r}; expected "
             f"{sorted(required_references)!r}"
         )
-    for reference in references:
-        parsed = urlparse(reference)
+    for reference, parsed in parsed_references.items():
         if parsed.scheme or parsed.netloc or reference.startswith("/"):
             raise ValueError(f"Pages asset reference must be relative: {reference}")
+        if parsed.path in {"app.js", "styles.css"} and parsed.query != (f"v={application_version}"):
+            raise ValueError(f"Pages asset version does not match manifest: {reference}")
 
     fixture = manifest.get("fixture")
     if not isinstance(fixture, dict):
@@ -152,7 +178,7 @@ def verify(root: Path) -> dict[str, object]:
     ).hexdigest()
     if fixture.get("payload_sha256") != payload_hash:
         raise ValueError("Pages demo payload hash does not match manifest")
-    if payload.get("schema_version") != "roadsense.demo/v1":
+    if payload.get("schema_version") != "roadsense.demo/v2":
         raise ValueError("Pages demo payload schema is invalid")
     if payload.get("source") != "deterministic_geometric_fixture":
         raise ValueError("Pages demo payload source is invalid")

@@ -5,9 +5,48 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
+import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
+
+_GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
+
+
+def _source_revision(root: Path) -> tuple[str, str]:
+    expected_sha = os.getenv("ROADSENSE_SOURCE_SHA", "").lower()
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        commit = completed.stdout.strip().lower()
+    except (OSError, subprocess.SubprocessError):
+        if _GIT_SHA.fullmatch(expected_sha):
+            return expected_sha, "unknown"
+        return "unknown", "unknown"
+    if not _GIT_SHA.fullmatch(commit):
+        return "unknown", "unknown"
+    if _GIT_SHA.fullmatch(expected_sha) and commit != expected_sha:
+        raise RuntimeError("checked-out source commit does not match ROADSENSE_SOURCE_SHA")
+    try:
+        status = subprocess.run(
+            ["git", "status", "--porcelain=v1", "--untracked-files=no"],
+            cwd=root,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return commit, "unknown"
+    return commit, "dirty" if status.stdout.strip() else "clean"
 
 
 def build(output: Path) -> Path:
@@ -28,6 +67,7 @@ def build(output: Path) -> Path:
     if source_root not in sys.path:
         sys.path.insert(0, source_root)
     try:
+        from roadsense import __version__
         from roadsense.fixture import build_demo_payload
         from roadsense.json_io import canonical_sha256
     except ImportError as exc:
@@ -35,6 +75,7 @@ def build(output: Path) -> Path:
 
     payload = build_demo_payload()
     payload_hash = canonical_sha256(payload)
+    source_commit, source_tree_state = _source_revision(root)
     fixture_manifest = json.loads(
         (root / "configs" / "fixture_manifest.json").read_text(encoding="utf-8")
     )
@@ -65,6 +106,9 @@ def build(output: Path) -> Path:
     }
     manifest = {
         "schema_version": "roadsense.pages/v1",
+        "application_version": __version__,
+        "source_commit": source_commit,
+        "source_tree_state": source_tree_state,
         "runtime": "deterministic_geometric_fixture",
         "evidence_level": "fixture",
         "evaluation_authorized": False,

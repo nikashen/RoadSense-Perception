@@ -2,13 +2,12 @@
   "use strict";
 
   const API_PATH = "/api/v1/demo";
-  const PAGES_PAYLOAD_PATH = "demo.json";
+  const PAGES_PAYLOAD_PATH = "demo.json?v=0.2.0.dev1";
   const WIDTH = 960;
   const HEIGHT = 540;
   const FIXTURE_CADENCE_MS = 100;
   const ROAD_BOTTOM = 540;
   const ROAD_HORIZON = 250;
-  const SCENE_OBJECT_MIN_CONFIDENCE = 0.5;
 
   const COLORS = Object.freeze({
     car: "#b8ef67",
@@ -262,7 +261,7 @@
     if (!root || !Array.isArray(rawFrames) || rawFrames.length !== 24) {
       throw new Error("invalid demo fixture: exactly 24 frames are required");
     }
-    if (root.schema_version !== "roadsense.demo/v1") {
+    if (root.schema_version !== "roadsense.demo/v2") {
       throw new Error("invalid demo fixture: unsupported schema");
     }
     if (root.source !== "deterministic_geometric_fixture") {
@@ -296,7 +295,11 @@
         throw new Error("invalid demo fixture: frame indices must be ordered");
       }
       const rawDetections = rawFrame?.detections ?? rawFrame?.objects ?? [];
+      const rawActors = rawFrame?.actors;
       const rawSegments = rawFrame?.segments ?? rawFrame?.segmentation ?? [];
+      if (!Array.isArray(rawActors) || !rawActors.length) {
+        throw new Error("invalid demo fixture: scene actors are required");
+      }
 
       const timestampMs = strictFiniteNumber(
         rawFrame?.timestamp_ms ?? rawFrame?.timestampMs,
@@ -306,6 +309,10 @@
       if (timestampMs < 0) {
         throw new Error("invalid demo fixture: timestamps must be non-negative");
       }
+      const actors = rawActors.map((item, itemIndex) =>
+        normalizeDetection(item, index, itemIndex),
+      );
+      validateSceneActors(actors);
       return {
         index,
         timestampMs,
@@ -317,6 +324,7 @@
             "ego speed",
           ),
         ),
+        actors,
         detections: rawDetections.map((item, itemIndex) => normalizeDetection(item, index, itemIndex)),
         segments: rawSegments.map(normalizeSegment).filter(Boolean),
       };
@@ -435,7 +443,7 @@
     // Pages payload or local API cannot be loaded, and carries a distinct ID so
     // it cannot be mistaken for the hashed city-loop payload.
     const frames = Array.from({ length: 24 }, (_, index) => {
-      const detections = [
+      const actors = [
         detection(
           "T-01",
           "car",
@@ -443,40 +451,52 @@
           laneVehicleBox(index, "right", 330, 420, 72, 112, 0.28),
           index,
         ),
-        detection(
-          "T-02",
-          "car",
-          0.87 + index * 0.003,
-          laneVehicleBox(index, "left", 305, 360, 55, 78, 0.28),
-          index,
-        ),
-        detection("T-07", "pedestrian", 0.91 - Math.abs(index - 5) * 0.009, [815 - index * 1.4, 300 + index * 0.8, 27, 67], index),
-        detection("T-20", "traffic light", 0.73 + (index % 3) * 0.02, [668, 174, 23, 48], index),
       ];
 
-      if (index <= 8) {
-        detections.push(
+      if (index >= 2 && index <= 21) {
+        actors.push(
           detection(
-            "T-04",
-            "bus",
-            0.82 - index * 0.012,
-            laneVehicleBox(index, "left", 340, 410, 78, 112, 0.55),
+            "T-02",
+            "car",
+            0.87 + index * 0.003,
+            laneVehicleBox(index, "left", 305, 360, 55, 78, 0.28),
             index,
-            index >= 7 ? "partial" : "none",
           ),
         );
       }
 
-      if (index >= 3) {
-        detections.push(
-          detection("T-12", "cyclist", 0.68 + (index - 3) * 0.019, [125 + index * 8, 350 - index * 0.5, 48, 59], index),
+      if (index >= 4 && index <= 18) {
+        actors.push(
+          detection(
+            "T-07",
+            "pedestrian",
+            0.91 - Math.abs(index - 5) * 0.009,
+            [802.5 - index * 1.8, 267 + index * 1.8, 36, 102],
+            index,
+          ),
         );
       }
+
+      if (index >= 9) {
+        actors.push(
+          detection(
+            "T-12",
+            "cyclist",
+            0.68 + (index - 9) * 0.019,
+            [123 + index * 7.5, 282, 70.5, 108],
+            index,
+          ),
+        );
+      }
+
+      const detections = actors.map((item) => ({ ...item, bbox: [...item.bbox] }));
+      validateSceneActors(actors);
 
       return {
         index,
         timestampMs: index * FIXTURE_CADENCE_MS,
         egoSpeedKph: Number((27.8 + index * 0.34).toFixed(1)),
+        actors,
         detections,
         segments: [
           {
@@ -517,8 +537,8 @@
     });
 
     return {
-      fixtureId: "roadsense-emergency-fallback-v4",
-      schemaVersion: "roadsense.demo/v1",
+      fixtureId: "roadsense-emergency-fallback-v5",
+      schemaVersion: "roadsense.demo/v2",
       source: "deterministic_geometric_fixture",
       evidence: {
         level: "fixture",
@@ -548,6 +568,42 @@
         ? roadCenter - (roadCenter - leftEdge) * laneFraction
         : roadCenter + (rightEdge - roadCenter) * laneFraction;
     return [centerX - width / 2, bottom - height, width, height];
+  }
+
+  function roadBoundsAtY(y) {
+    if (y < ROAD_HORIZON || y > ROAD_BOTTOM) {
+      throw new Error("invalid demo fixture: vehicle depth leaves the rendered road");
+    }
+    const progress = (y - ROAD_HORIZON) / (ROAD_BOTTOM - ROAD_HORIZON);
+    return {
+      left: 419 - 183 * progress,
+      right: 543 + 236 * progress,
+    };
+  }
+
+  function validateSceneActors(actors) {
+    actors.forEach((item) => {
+      if (item.className !== "car" && item.className !== "bus") return;
+      const [x, y, width, height] = item.bbox;
+      [y, y + height].forEach((edgeY) => {
+        const bounds = roadBoundsAtY(edgeY);
+        if (x < bounds.left || x + width > bounds.right) {
+          throw new Error("invalid demo fixture: physical vehicle leaves the rendered road");
+        }
+      });
+    });
+
+    for (let first = 0; first < actors.length; first += 1) {
+      for (let second = first + 1; second < actors.length; second += 1) {
+        const labels = new Set([actors[first].className, actors[second].className]);
+        const hasVehicle = labels.has("car") || labels.has("bus");
+        const hasVulnerableActor = labels.has("pedestrian") || labels.has("cyclist");
+        if (!hasVehicle || !hasVulnerableActor) continue;
+        if (boxIntersectionArea(actors[first].bbox, actors[second].bbox) > 0) {
+          throw new Error("invalid demo fixture: physical vehicle overlaps a vulnerable actor");
+        }
+      }
+    }
   }
 
   function detection(trackId, className, confidence, bbox, frameIndex, occlusion = "none") {
@@ -599,10 +655,9 @@
       drawSegments(context, frame.segments);
     }
 
-    // Low-confidence injected false positives remain overlay candidates, but
-    // they must not materialize as physical actors in the synthetic scene.
-    [...frame.detections]
-      .filter((item) => item.confidence >= SCENE_OBJECT_MIN_CONFIDENCE)
+    // Physical actors come from the continuous scene contract. Prediction
+    // misses, jitter, false positives, and ID switches affect overlays only.
+    [...frame.actors]
       .sort((a, b) => a.bbox[1] + a.bbox[3] - (b.bbox[1] + b.bbox[3]))
       .forEach((item) => drawSceneObject(context, item));
 
@@ -838,7 +893,7 @@
 
     if (item.className === "car" || item.className === "bus") {
       const isBus = item.className === "bus";
-      const primaryTrack = item.trackId === "1" || item.trackId === "T-01";
+      const primaryTrack = ["1", "101", "T-01"].includes(item.trackId);
       const bodyColor = primaryTrack ? "#314d5a" : isBus ? "#416c72" : "#8e7759";
       drawRoadVehicle(context, item, bodyColor, isBus);
     } else if (item.className === "pedestrian") {
@@ -1295,6 +1350,9 @@
 
   function updateSourceStatus() {
     elements.headerStatus.classList.add("is-ready");
+    const degraded = ["builtin", "fallback"].includes(state.source);
+    elements.headerStatus.classList.toggle("is-degraded", degraded);
+    document.body.classList.toggle("has-degraded-source", degraded);
     const labels = {
       api: "API fixture · no inference",
       pages: "Pages fixture · versioned payload",
@@ -1527,13 +1585,17 @@
   }
 
   function intersectionOverUnion(first, second) {
+    const intersection = boxIntersectionArea(first, second);
+    const union = boxArea(first) + boxArea(second) - intersection;
+    return union > 0 ? intersection / union : 0;
+  }
+
+  function boxIntersectionArea(first, second) {
     const left = Math.max(first[0], second[0]);
     const top = Math.max(first[1], second[1]);
     const right = Math.min(first[0] + first[2], second[0] + second[2]);
     const bottom = Math.min(first[1] + first[3], second[1] + second[3]);
-    const intersection = Math.max(0, right - left) * Math.max(0, bottom - top);
-    const union = boxArea(first) + boxArea(second) - intersection;
-    return union > 0 ? intersection / union : 0;
+    return Math.max(0, right - left) * Math.max(0, bottom - top);
   }
 
   function polygonArea(points) {

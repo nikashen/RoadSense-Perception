@@ -8,7 +8,7 @@
 
 - 已实现严格帧、框、检测、数据清单和评测报告契约。
 - 已实现 IoU 几何匹配、检测 AP、语义分割 mIoU、MOTA/identity-F1 协议和可重置 IoU Tracker。
-- 已实现 24 帧确定性道路场景、FastAPI 接口、Pages Workbench、逐帧回放、图层开关、置信度显示过滤和证据页。
+- 已实现 24 帧确定性道路场景、FastAPI 接口、Pages Workbench、逐帧回放、图层开关、置信度显示过滤和证据页；场景真值演员与预测框分层，漏检、抖动和 ID switch 不会导致实体车辆横跳或闪失。
 - 已实现 `roadsense evaluate-local` 本地序列评测入口：拆分校验、帧/时间戳对齐、NPY 掩码安全边界、逐序列与聚合诊断，以及输入/报告哈希。
 - 已实现模型工件 manifest、SHA-256 验证收据和线程安全 AdapterRegistry；未显式验证的权重不能进入受保护的适配器路径。
 - 已用本地 COCO8 四张验证图和 SHA-256 校验的 YOLO11n ONNX 工件跑通真实数据开发烟测：RoadSense compact AP@0.50=0.650、precision=0.692、recall=0.529；报告明确标记为 development evidence，不冒充 COCO mAP。

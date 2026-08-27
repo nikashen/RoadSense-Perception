@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +39,28 @@ def _sha_tag(tag: str) -> str:
     """Return a valid deterministic digest for a synthetic receipt field."""
 
     return _sha_bytes(tag.encode("ascii"))
+
+
+OFFICIAL_METRICS = {
+    "AP": 0.42,
+    "AP50": 0.6,
+    "AP75": 0.3,
+    "APl": 0.46,
+    "APm": 0.41,
+    "APs": 0.22,
+    "AR1": 0.19,
+    "AR10": 0.51,
+    "AR100": 0.57,
+    "ARl": 0.61,
+    "ARm": 0.55,
+    "ARs": 0.31,
+}
+
+
+def _official_result_payload(metrics: Mapping[str, float] = OFFICIAL_METRICS) -> dict[str, object]:
+    return {
+        key: [{"pedestrian": value}, {"OVERALL": value}] for key, value in sorted(metrics.items())
+    }
 
 
 def _write_json(path: Path, payload: object) -> None:
@@ -239,16 +262,16 @@ def _synthetic_evidence(tmp_path: Path, *, formal: bool = False) -> dict[str, Pa
     }
 
     evaluation_paths: dict[str, Path] = {}
-    for role, result_payload in (
-        ("evaluation-a", b'{"AP":0.42}\n'),
-        ("evaluation-b", b'{ "AP": 0.42 }\n'),
-    ):
+    for role, indent in (("evaluation-a", None), ("evaluation-b", 2)):
         evaluation_dir = tmp_path / role
         evaluation_dir.mkdir()
         result_file = evaluation_dir / "evaluator-result.json"
         stdout_file = evaluation_dir / "evaluator.stdout.txt"
         stderr_file = evaluation_dir / "evaluator.stderr.txt"
-        result_file.write_bytes(result_payload)
+        result_file.write_text(
+            json.dumps(_official_result_payload(), sort_keys=True, indent=indent) + "\n",
+            encoding="utf-8",
+        )
         stdout_file.write_bytes(b"official evaluator stdout\n")
         stderr_file.write_bytes(b"\n")
         result_sha = _sha_bytes(result_file.read_bytes())
@@ -291,7 +314,7 @@ def _synthetic_evidence(tmp_path: Path, *, formal: bool = False) -> dict[str, Pa
                     "sha256": result_sha,
                     "bytes": result_file.stat().st_size,
                 },
-                "metrics": {"AP": 0.42, "AP50": 0.6, "AP75": 0.3},
+                "metrics": dict(OFFICIAL_METRICS),
             },
             "run_id": role.replace("evaluation-", "run-"),
         }
@@ -350,11 +373,7 @@ def test_finalizer_accepts_real_prep_freeze_field_shapes_and_redacts_paths(
 
     assert receipt["benchmark_claim_available"] is True
     assert receipt["dataset"]["split_manifest_sha256"]
-    assert receipt["evaluator_runs"][0]["metrics"] == {
-        "AP": 0.42,
-        "AP50": 0.6,
-        "AP75": 0.3,
-    }
+    assert receipt["evaluator_runs"][0]["metrics"] == dict(sorted(OFFICIAL_METRICS.items()))
     assert verify_bdd100k_detection_benchmark(output)["report_id"] == receipt["report_id"]
 
     text = output.read_text(encoding="utf-8")
@@ -406,8 +425,15 @@ def test_finalizer_is_order_invariant_and_requires_identical_evaluator_metrics(
     )
     assert reversed_order == first
 
+    result_path = evidence["evaluation_b"].parent / "evaluator-result.json"
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    result["AP"][-1]["OVERALL"] = 0.41
+    _write_json(result_path, result)
     changed = json.loads(evidence["evaluation_b"].read_text(encoding="utf-8"))
     changed["evaluator"]["metrics"]["AP"] = 0.41
+    result_sha = _sha_bytes(result_path.read_bytes())
+    changed["evaluator"]["result_sha256"] = result_sha
+    changed["evaluator"]["result"]["sha256"] = result_sha
     _write_json(evidence["evaluation_b"], changed)
     with pytest.raises(BDD100KFinalizeError, match="identical metrics"):
         finalize_bdd100k_detection_benchmark(
@@ -415,6 +441,37 @@ def test_finalizer_is_order_invariant_and_requires_identical_evaluator_metrics(
             evaluation_a=evidence["evaluation_a"],
             evaluation_b=evidence["evaluation_b"],
         )
+
+
+def test_finalizer_rejects_receipt_metrics_not_derived_from_bound_result(tmp_path: Path) -> None:
+    evidence = _synthetic_evidence(tmp_path, formal=True)
+    forged = dict(OFFICIAL_METRICS)
+    forged["AP"] = 99.0
+    for key in ("evaluation_a", "evaluation_b"):
+        receipt = json.loads(evidence[key].read_text(encoding="utf-8"))
+        receipt["evaluator"]["metrics"] = forged
+        _write_json(evidence[key], receipt)
+
+    with pytest.raises(BDD100KFinalizeError, match="metrics do not match the bound"):
+        _finalize(evidence)
+
+
+def test_finalizer_rejects_bound_result_missing_official_metric(tmp_path: Path) -> None:
+    evidence = _synthetic_evidence(tmp_path, formal=True)
+    evaluation_path = evidence["evaluation_a"]
+    result_path = evaluation_path.parent / "evaluator-result.json"
+    result = json.loads(result_path.read_text(encoding="utf-8"))
+    result.pop("AP75")
+    _write_json(result_path, result)
+
+    receipt = json.loads(evaluation_path.read_text(encoding="utf-8"))
+    result_sha = _sha_bytes(result_path.read_bytes())
+    receipt["evaluator"]["result_sha256"] = result_sha
+    receipt["evaluator"]["result"]["sha256"] = result_sha
+    _write_json(evaluation_path, receipt)
+
+    with pytest.raises(BDD100KFinalizeError, match="missing=AP75"):
+        _finalize(evidence)
 
 
 @pytest.mark.parametrize(

@@ -495,7 +495,7 @@ def build_fixture_runtime_record(*, iterations: int = 1) -> RuntimeAuditRecord:
         },
         "output": {
             "artifact": "roadsense.demo.payload",
-            "schema_version": "roadsense.demo/v1",
+            "schema_version": "roadsense.demo/v2",
             "payload_sha256": output_sha256,
             "report_id": None,
             "metrics": flattened_metrics,

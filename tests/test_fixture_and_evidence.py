@@ -60,7 +60,7 @@ def test_fixture_vehicles_follow_perspective_lanes_instead_of_sliding_sideways()
         assert abs(centers_x[-1] - centers_x[0]) < bottom_centers[-1] - bottom_centers[0]
 
 
-def test_all_rendered_cars_keep_their_ground_edge_inside_the_road() -> None:
+def test_all_scene_cars_keep_their_full_box_inside_the_road() -> None:
     payload = build_demo_payload()
     frames = payload["frames"]
     assert isinstance(frames, list)
@@ -68,34 +68,33 @@ def test_all_rendered_cars_keep_their_ground_edge_inside_the_road() -> None:
     for frame in frames:
         road = next(segment for segment in frame["segments"] if segment["label"] == "road")
         polygon = road["polygon"]
-        for item in frame["objects"]:
+        for item in frame["actors"]:
             if item["label"] != "car":
                 continue
             x, y, width, height = item["bbox"]
-            ground_y = y + height
-            intersections: list[float] = []
-            closed_polygon = [*polygon, polygon[0]]
-            for start, end in pairwise(closed_polygon):
-                x1, y1 = start
-                x2, y2 = end
-                if y1 == y2 or not min(y1, y2) <= ground_y <= max(y1, y2):
-                    continue
-                progress = (ground_y - y1) / (y2 - y1)
-                intersections.append(x1 + (x2 - x1) * progress)
-            assert len(intersections) >= 2
-            left, right = min(intersections), max(intersections)
-            assert left <= x
-            assert x + width <= right
+            for edge_y in (y, y + height):
+                intersections: list[float] = []
+                closed_polygon = [*polygon, polygon[0]]
+                for start, end in pairwise(closed_polygon):
+                    x1, y1 = start
+                    x2, y2 = end
+                    if y1 == y2 or not min(y1, y2) <= edge_y <= max(y1, y2):
+                        continue
+                    progress = (edge_y - y1) / (y2 - y1)
+                    intersections.append(x1 + (x2 - x1) * progress)
+                assert len(intersections) >= 2
+                left, right = min(intersections), max(intersections)
+                assert left <= x
+                assert x + width <= right
 
 
-def test_visible_cars_do_not_overlap_pedestrians_or_cyclists() -> None:
+def test_scene_cars_do_not_overlap_pedestrians_or_cyclists() -> None:
     payload = build_demo_payload()
     frames = payload["frames"]
     assert isinstance(frames, list)
 
     for frame in frames:
-        visible = [item for item in frame["objects"] if item["confidence"] >= 0.5]
-        for first, second in combinations(visible, 2):
+        for first, second in combinations(frame["actors"], 2):
             labels = {first["label"], second["label"]}
             if "car" not in labels or labels.isdisjoint({"pedestrian", "cyclist"}):
                 continue
@@ -110,6 +109,44 @@ def test_visible_cars_do_not_overlap_pedestrians_or_cyclists() -> None:
                 min(first_y + first_height, second_y + second_height) - max(first_y, second_y),
             )
             assert overlap_width * overlap_height == 0
+
+
+def test_scene_actors_use_continuous_truth_tracks_while_predictions_keep_errors() -> None:
+    payload = build_demo_payload()
+    frames = payload["frames"]
+    assert isinstance(frames, list)
+
+    actor_tracks: dict[int, list[tuple[int, float, float]]] = {}
+    prediction_presence: dict[int, set[int]] = {}
+    for frame in frames:
+        frame_index = frame["frame_index"]
+        for item in frame["actors"]:
+            x, y, width, height = item["bbox"]
+            actor_tracks.setdefault(item["track_id"], []).append(
+                (frame_index, x + width / 2, y + height)
+            )
+        for item in frame["objects"]:
+            prediction_presence.setdefault(item["track_id"], set()).add(frame_index)
+
+    for positions in actor_tracks.values():
+        assert all(next_frame == frame + 1 for (frame, *_), (next_frame, *_) in pairwise(positions))
+
+    for track_id in VEHICLE_TRACK_IDS:
+        positions = actor_tracks[track_id]
+        assert all(next_bottom > bottom for (*_, bottom), (*_, next_bottom) in pairwise(positions))
+        assert all(
+            abs(next_center_x - center_x) < next_bottom - bottom
+            for (_frame, center_x, bottom), (_next_frame, next_center_x, next_bottom) in pairwise(
+                positions
+            )
+        )
+
+    # The scene remains physically continuous while the prediction layer
+    # deliberately contains misses and an identity switch for metric plumbing.
+    assert 15 in {frame for frame, *_ in actor_tracks[102]}
+    assert 15 not in prediction_presence[2]
+    assert {10, 11, 12}.issubset({frame for frame, *_ in actor_tracks[201]})
+    assert {10, 11, 12}.isdisjoint(prediction_presence[3])
 
 
 def test_fixture_segmentation_ontology_matches_raster_classes() -> None:

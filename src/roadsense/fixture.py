@@ -23,7 +23,7 @@ SEGMENTATION_WIDTH = 160
 SEGMENTATION_HEIGHT = 90
 
 CATEGORY_LABELS = {1: "car", 2: "pedestrian", 3: "cyclist"}
-FIXTURE_ID = "roadsense-city-loop-v4"
+FIXTURE_ID = "roadsense-city-loop-v5"
 VEHICLE_TRACK_IDS = (101, 102)
 ROAD_HORIZON_Y = 250.0
 ROAD_BOTTOM_Y = 540.0
@@ -177,7 +177,7 @@ def _prediction_detections(frame_index: int, truth: tuple[Detection, ...]) -> tu
                     end_bottom=330.0,
                     start_width=42.0,
                     end_width=58.0,
-                    lane_fraction=0.62,
+                    lane_fraction=0.50,
                 ),
             )
         )
@@ -303,9 +303,10 @@ def _validate_vehicle_road_placement(objects: list[dict[str, object]]) -> None:
         if not all(isinstance(value, (int, float)) for value in bbox):
             raise RuntimeError("vehicle display bbox must be numeric")
         x, y, width, height = (float(value) for value in bbox)
-        left, right = _road_bounds_at_display_y(y + height)
-        if x < left or x + width > right:
-            raise RuntimeError("vehicle display bbox leaves the rendered road at ground contact")
+        for edge_y in (y, y + height):
+            left, right = _road_bounds_at_display_y(edge_y)
+            if x < left or x + width > right:
+                raise RuntimeError("vehicle display bbox leaves the rendered road")
 
 
 def _numeric_bbox(item: dict[str, object]) -> tuple[float, float, float, float]:
@@ -375,21 +376,27 @@ def build_demo_payload(bundle: FixtureBundle | None = None) -> dict[str, object]
     selected = bundle or build_fixture_bundle()
     metrics = build_fixture_metrics(selected)
     frames = []
-    for frame in selected.prediction_frames:
-        objects = [_object_payload(detection) for detection in frame.detections]
+    for truth_frame, prediction_frame in zip(
+        selected.truth_frames, selected.prediction_frames, strict=True
+    ):
+        actors = [_object_payload(detection) for detection in truth_frame.detections]
+        objects = [_object_payload(detection) for detection in prediction_frame.detections]
+        _validate_vehicle_road_placement(actors)
+        _validate_actor_separation(actors)
         _validate_vehicle_road_placement(objects)
         _validate_actor_separation(objects)
         frames.append(
             {
-                "id": f"frame-{frame.frame_index:03d}",
-                "frame_index": frame.frame_index,
-                "timestamp_ms": frame.timestamp_ms,
+                "id": f"frame-{prediction_frame.frame_index:03d}",
+                "frame_index": prediction_frame.frame_index,
+                "timestamp_ms": prediction_frame.timestamp_ms,
+                "actors": actors,
                 "objects": objects,
                 "segments": _road_segments(),
             }
         )
     return {
-        "schema_version": "roadsense.demo/v1",
+        "schema_version": "roadsense.demo/v2",
         "source": "deterministic_geometric_fixture",
         "fixture_id": FIXTURE_ID,
         "fps": FPS,

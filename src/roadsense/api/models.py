@@ -105,6 +105,7 @@ class DemoFrameResponse(APIModel):
     id: str = Field(min_length=1)
     frame_index: StrictInt = Field(ge=0)
     timestamp_ms: StrictInt = Field(ge=0)
+    actors: tuple[DemoObjectResponse, ...]
     objects: tuple[DemoObjectResponse, ...]
     segments: tuple[DemoSegmentResponse, ...]
 
@@ -124,7 +125,7 @@ class DemoEvidenceResponse(APIModel):
 
 
 class DemoResponse(APIModel):
-    schema_version: Literal["roadsense.demo/v1"]
+    schema_version: Literal["roadsense.demo/v2"]
     source: Literal["deterministic_geometric_fixture"]
     fixture_id: str = Field(min_length=1)
     fps: StrictFloat = Field(gt=0)
@@ -170,11 +171,16 @@ class DemoResponse(APIModel):
                 raise ValueError("demo timestamps must follow cadence_ms from frame zero")
             if any(item.category_id not in detection_category_ids for item in frame.objects):
                 raise ValueError("frame object category is not in the detection ontology")
+            if any(item.category_id not in detection_category_ids for item in frame.actors):
+                raise ValueError("frame actor category is not in the detection ontology")
             if any(item.category_id not in segmentation_category_ids for item in frame.segments):
                 raise ValueError("frame segment category is not in the segmentation ontology")
             track_ids = [item.track_id for item in frame.objects]
             if len(track_ids) != len(set(track_ids)):
                 raise ValueError("frame object track IDs must be unique")
+            actor_track_ids = [item.track_id for item in frame.actors]
+            if len(actor_track_ids) != len(set(actor_track_ids)):
+                raise ValueError("frame actor track IDs must be unique")
         return self
 
 

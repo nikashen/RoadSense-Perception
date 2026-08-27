@@ -1,6 +1,6 @@
 {
   "schema_version": "roadsense.dataset-manifest/v1",
-  "dataset_name": "RoadSense deterministic city-loop fixture v4",
+  "dataset_name": "RoadSense deterministic city-loop fixture v5",
   "source_url": "repository://src/roadsense/fixture.py",
   "license_id": "MIT-generated-fixture",
   "tasks": [
@@ -11,8 +11,8 @@
   "splits": {
     "interactive": "24 generated frames; no train/test interpretation"
   },
-  "content_sha256": "f2254acbc35dc3db44cf832f7876ae21bb7d7d20ae6de703066243effbc985c8",
+  "content_sha256": "a7c78d45d3c46c8e02d3ba88fa7d43c8fd89221e4c3f5746190cf9f3e81b2d3e",
   "evaluation_authorized": false,
   "frozen": false,
-  "notes": "Canonical SHA-256 of the deterministic build_demo_payload() JSON. Vehicles remain upright and visible vehicle/VRU actors use non-overlapping road or sidewalk trajectories; this is a fixture identity, not a dataset benchmark or model artifact hash."
+  "notes": "Canonical SHA-256 of the deterministic build_demo_payload() JSON. Continuous truth-derived scene actors are separate from prediction overlays, vehicles remain upright and fully on-road, and vehicle/VRU actors do not overlap; this is a fixture identity, not a dataset benchmark or model artifact hash."
 }

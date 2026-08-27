@@ -8,6 +8,12 @@ Allowed before real evaluation: source code, tests, deterministic Pages
 fixture, wheel/sdist, architecture and protocol documents, and explicit
 `fixture` evidence flags. The README must not contain real-data metric claims.
 
+Every development snapshot must use a new PEP 440 version and an immutable
+matching Git tag; never move an older tag after main has advanced. Before
+creating the prerelease, confirm that `pyproject.toml`, `roadsense.__version__`,
+README, and the Pages footer agree, build both archives from a clean tagged
+commit, and publish a `SHA256SUMS` file alongside the wheel and sdist.
+
 ## Benchmark release
 
 Do not create a benchmark release until all of the following are present:
@@ -48,6 +54,10 @@ $artifacts = Get-ChildItem -LiteralPath dist -File |
   Where-Object { $_.Name -match '\.(whl|tar\.gz)$' }
 if ($artifacts.Count -lt 2) { throw "wheel and sdist are required" }
 & .\.venv\Scripts\python.exe -m twine check $artifacts.FullName
+$artifacts | ForEach-Object {
+  $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+  "$hash  $($_.Name)"
+} | Set-Content -LiteralPath dist\SHA256SUMS -Encoding ascii
 ```
 
 Then install the wheel (and, separately, the sdist) into a fresh Python

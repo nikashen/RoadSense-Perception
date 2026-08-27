@@ -5,13 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="RoadSense Perception Lab — v0.2.0.dev0 evidence-first fixture with local artifact, evaluation, and runtime audit contracts."
+      content="RoadSense Perception Lab — v0.2.0.dev1 evidence-first fixture with local artifact, evaluation, and runtime audit contracts."
     />
     <meta name="theme-color" content="#071411" />
-    <title>RoadSense Perception Lab · v0.2.0.dev0</title>
+    <title>RoadSense Perception Lab · v0.2.0.dev1</title>
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="styles.css" />
-    <script src="app.js" defer></script>
+    <link rel="stylesheet" href="styles.css?v=0.2.0.dev1" />
+    <script src="app.js?v=0.2.0.dev1" defer></script>
   </head>
   <body>
     <a class="skip-link" href="#workspace">Skip to perception workspace</a>
@@ -72,7 +72,7 @@
                 <p class="section-kicker">SEQUENCE VIEWER</p>
                 <h2 id="scene-title">Urban approach · Scene A</h2>
               </div>
-              <div class="frame-readout" aria-live="polite">
+              <div class="frame-readout">
                 <span id="frame-counter">FRAME 01 / 24</span>
                 <strong id="time-counter">00:00.000</strong>
               </div>
@@ -210,6 +210,10 @@
                 />
                 <div class="range-scale" aria-hidden="true"><span>0.30</span><span>0.95</span></div>
               </div>
+              <p class="scene-layer-note" role="note">
+                Scene actors remain continuous; an actor without a box represents a deliberate
+                fixture miss in the prediction layer.
+              </p>
             </section>
 
             <section class="panel diagnostics-panel" aria-labelledby="diagnostics-title">
@@ -250,10 +254,10 @@
                   <p class="section-kicker">FRAME INVENTORY</p>
                   <h2 id="objects-title">Objects</h2>
                 </div>
-                <span class="object-count" id="object-count" aria-live="polite">0 shown</span>
+                <span class="object-count" id="object-count">0 shown</span>
               </div>
               <div class="object-list" id="object-list" role="group" aria-label="Objects in current frame"></div>
-              <div class="object-detail" id="object-detail" aria-live="polite"></div>
+              <div class="object-detail" id="object-detail"></div>
             </section>
           </aside>
         </div>
@@ -403,8 +407,12 @@
     </main>
 
     <footer class="site-footer">
-      <span>RoadSense Perception · 2D perception contract v0.2.0.dev0 capability preview</span>
-      <span>Detection · Segmentation · Tracking</span>
+      <span>RoadSense Perception · 2D perception contract v0.2.0.dev1 capability preview</span>
+      <span class="footer-links">
+        <a href="https://github.com/nikashen/RoadSense-Perception">Repository</a>
+        <a href="https://github.com/nikashen/RoadSense-Perception#roadsense-perception">Documentation</a>
+        <span>Detection · Segmentation · Tracking</span>
+      </span>
     </footer>
 
     <noscript>

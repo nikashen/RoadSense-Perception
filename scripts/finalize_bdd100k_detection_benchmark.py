@@ -70,6 +70,21 @@ except ModuleNotFoundError:  # pragma: no cover - exercised by direct script CLI
 FINALIZE_SCHEMA = "roadsense.bdd100k-detection-finalize/v1"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9._-]{1,127}$")
+_MAX_EVALUATOR_RESULT_BYTES = 16 * 1024 * 1024
+_OFFICIAL_DETECTION_METRIC_KEYS = (
+    "AP",
+    "AP50",
+    "AP75",
+    "APs",
+    "APm",
+    "APl",
+    "AR1",
+    "AR10",
+    "AR100",
+    "ARs",
+    "ARm",
+    "ARl",
+)
 
 # Formal BDD100K Detection 2020 ``val`` provenance.  These values mirror the
 # checks in ``prepare_bdd100k_detection``.  They are deliberately repeated
@@ -177,7 +192,7 @@ def _check_optional_file_hash(
     expected_sha: object,
     field: str,
     required: bool = True,
-) -> None:
+) -> Path | None:
     """Verify a receipt's relative artifact when a path-backed receipt exists."""
 
     if not isinstance(relative_name, str) or not relative_name:
@@ -199,7 +214,7 @@ def _check_optional_file_hash(
     if base is None:
         # In-memory receipts have no artifact directory to hash, but their
         # path fields still need to obey the same portable contract.
-        return
+        return None
     path = (base / Path(*parts)).resolve()
     try:
         path.relative_to(base.resolve())
@@ -208,10 +223,91 @@ def _check_optional_file_hash(
     if not path.is_file() or path.is_symlink():
         if required:
             raise BDD100KFinalizeError(f"{field} artifact is missing")
-        return
+        return None
     observed, _size = _sha256_file(path)
     if observed != _require_sha(expected_sha, f"{field}.sha256"):
         raise BDD100KFinalizeError(f"{field} artifact hash does not match its receipt")
+    return path
+
+
+def _load_bound_official_detection_metrics(path: Path, *, expected_sha256: str) -> dict[str, float]:
+    """Parse official aggregate metrics from the exact hash-bound result bytes.
+
+    The evaluator receipt is not trusted to restate metrics faithfully.  Read
+    the result artifact again, verify the digest over the same bytes that are
+    parsed, reject duplicate keys, and require the complete Detection result
+    schema emitted by the pinned Scalabel evaluator.
+    """
+
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        raise BDD100KFinalizeError("cannot read evaluator result artifact") from exc
+    if not raw or len(raw) > _MAX_EVALUATOR_RESULT_BYTES:
+        raise BDD100KFinalizeError("evaluator result artifact has an unsafe size")
+    if hashlib.sha256(raw).hexdigest() != expected_sha256:
+        raise BDD100KFinalizeError("evaluator result artifact hash does not match its receipt")
+
+    def parse_constant(token: str) -> float:
+        if token == "NaN":
+            return float("nan")
+        raise ValueError(f"unsupported non-finite JSON constant: {token}")
+
+    def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, item in pairs:
+            if key in result:
+                raise ValueError(f"duplicate JSON key: {key}")
+            result[key] = item
+        return result
+
+    try:
+        payload = json.loads(
+            raw.decode("utf-8", errors="strict"),
+            parse_constant=parse_constant,
+            object_pairs_hook=reject_duplicate_keys,
+        )
+    except (UnicodeError, ValueError, json.JSONDecodeError) as exc:
+        raise BDD100KFinalizeError("evaluator result artifact is not valid official JSON") from exc
+    if not isinstance(payload, Mapping):
+        raise BDD100KFinalizeError("official evaluator result must be a JSON object")
+
+    expected_keys = set(_OFFICIAL_DETECTION_METRIC_KEYS)
+    observed_keys = set(payload)
+    if observed_keys != expected_keys:
+        missing = ", ".join(sorted(expected_keys - observed_keys)) or "none"
+        unexpected = ", ".join(sorted(observed_keys - expected_keys)) or "none"
+        raise BDD100KFinalizeError(
+            "official evaluator result metric fields do not match the pinned Detection schema "
+            f"(missing={missing}; unexpected={unexpected})"
+        )
+
+    metrics: dict[str, float] = {}
+    for key in _OFFICIAL_DETECTION_METRIC_KEYS:
+        rows = payload[key]
+        if not isinstance(rows, list) or not rows:
+            raise BDD100KFinalizeError(
+                f"official evaluator result metric {key} must contain score rows"
+            )
+        overall_values = [
+            row["OVERALL"] for row in rows if isinstance(row, Mapping) and "OVERALL" in row
+        ]
+        if len(overall_values) != 1:
+            raise BDD100KFinalizeError(
+                f"official evaluator result metric {key} must contain exactly one OVERALL value"
+            )
+        candidate = overall_values[0]
+        if isinstance(candidate, bool) or not isinstance(candidate, (int, float)):
+            raise BDD100KFinalizeError(
+                f"official evaluator result metric {key}.OVERALL must be numeric"
+            )
+        number = float(candidate)
+        if not math.isfinite(number):
+            raise BDD100KFinalizeError(
+                f"official evaluator result metric {key}.OVERALL must be finite"
+            )
+        metrics[key] = number
+    return dict(sorted(metrics.items()))
 
 
 def _archive_material(source_receipt: Mapping[str, Any]) -> list[dict[str, Any]]:
@@ -676,7 +772,7 @@ def _validate_evaluator_receipt(
                 "formal BDD100K evaluator receipt must bind a result file (not stdout fallback)"
             )
     run_id = _require_identifier(value.get("run_id"), "evaluation.run_id")
-    _check_optional_file_hash(
+    result_path = _check_optional_file_hash(
         base=base,
         relative_name=evaluator.get("result", {}).get("path")
         if isinstance(evaluator.get("result"), Mapping)
@@ -684,6 +780,19 @@ def _validate_evaluator_receipt(
         expected_sha=result_sha,
         field="evaluator result",
     )
+    if expected_image_count == BDD100K_OFFICIAL_IMAGE_COUNT:
+        if result_path is None:
+            raise BDD100KFinalizeError(
+                "formal BDD100K evaluator receipt requires a path-backed result artifact"
+            )
+        bound_metrics = _load_bound_official_detection_metrics(
+            result_path, expected_sha256=result_sha
+        )
+        if metrics != bound_metrics:
+            raise BDD100KFinalizeError(
+                "evaluation receipt metrics do not match the bound official evaluator result"
+            )
+        metrics = bound_metrics
     stdout_sha = _require_sha(evaluator.get("stdout_sha256"), "evaluator.stdout_sha256")
     stderr_sha = _require_sha(evaluator.get("stderr_sha256"), "evaluator.stderr_sha256")
     if base is not None:

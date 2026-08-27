@@ -13,7 +13,7 @@ downloading images or model weights.
 
 **Live demo:** <https://nikashen.github.io/RoadSense-Perception/>
 
-## Current milestone: `0.2.0.dev0` capability preview
+## Current milestone: `0.2.0.dev1` capability preview
 
 The repository currently contains:
 
@@ -24,6 +24,9 @@ The repository currently contains:
 - an explicit IoU tracker baseline with aging, score filtering, and reset;
 - a 24-frame synthetic road sequence containing successful tracks, misses,
   false positives, and an identity-switch case;
+- separate continuous scene actors and prediction overlays, so model jitter,
+  misses, and identity switches remain visible without making physical actors
+  teleport or disappear;
 - a Pages build that emits a hashed `demo.json` from the same payload as the
   local API, with an emergency fixture fallback only when that artifact is unavailable;
 - FastAPI endpoints and a responsive Perception Workbench;
@@ -43,10 +46,22 @@ BDD100K AP, official MOT metrics, an FPS claim, or evidence of model quality.
 Windows PowerShell:
 
 ```powershell
-Set-Location <WORKSPACE_ROOT>\项目十\RoadSense-Perception
+git clone https://github.com/nikashen/RoadSense-Perception.git
+Set-Location RoadSense-Perception
 py -3.11 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[serve]"
 .\.venv\Scripts\roadsense.exe serve --port 8100
+```
+
+Linux/macOS:
+
+```bash
+git clone https://github.com/nikashen/RoadSense-Perception.git
+cd RoadSense-Perception
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e ".[serve]"
+roadsense serve --port 8100
 ```
 
 Open <http://127.0.0.1:8100/>. The page supports play/pause, frame stepping,

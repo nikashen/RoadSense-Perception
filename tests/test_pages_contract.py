@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from pathlib import Path
 
@@ -68,25 +69,32 @@ def test_pages_build_contains_relative_fixture_contract() -> None:
         built = build(output)
         manifest = json.loads((built / "manifest.json").read_text(encoding="utf-8"))
         app_source = (built / "app.js").read_text(encoding="utf-8")
+        index_source = (built / "index.html").read_text(encoding="utf-8")
 
         assert manifest["runtime"] == "deterministic_geometric_fixture"
+        assert manifest["application_version"] == "0.2.0.dev1"
+        assert re.fullmatch(r"[0-9a-f]{40}|unknown", manifest["source_commit"])
+        assert manifest["source_tree_state"] in {"clean", "dirty", "unknown"}
         assert manifest["benchmark_claim_available"] is False
         assert manifest["fixture"] == {
-            "fixture_id": "roadsense-city-loop-v4",
+            "fixture_id": "roadsense-city-loop-v5",
             "frame_count": 24,
             "canvas": {"width": 960, "height": 540},
             "cadence_ms": 100,
-            "payload_sha256": "f2254acbc35dc3db44cf832f7876ae21bb7d7d20ae6de703066243effbc985c8",
+            "payload_sha256": "a7c78d45d3c46c8e02d3ba88fa7d43c8fd89221e4c3f5746190cf9f3e81b2d3e",
         }
         demo = json.loads((built / "demo.json").read_text(encoding="utf-8"))
-        assert demo["fixture_id"] == "roadsense-city-loop-v4"
+        assert demo["fixture_id"] == "roadsense-city-loop-v5"
         assert len(demo["frames"]) == 24
         assert demo["evidence"]["benchmark_claim_available"] is False
         assert "Array.from({ length: 24 }" in app_source
-        assert "SCENE_OBJECT_MIN_CONFIDENCE" in app_source
+        assert "[...frame.actors]" in app_source
+        assert "validateSceneActors(actors)" in app_source
         assert "const forward = { x: 0, y: -1 }" in app_source
         assert "api_unavailable:" in app_source
         assert "dataset.label" in app_source
+        assert "app.js?v=0.2.0.dev1" in index_source
+        assert "styles.css?v=0.2.0.dev1" in index_source
         assert all((built / asset).is_file() for asset in manifest["assets"])
         assert set(manifest["asset_sha256"]) == set(manifest["assets"])
     finally:

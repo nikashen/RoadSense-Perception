@@ -2,7 +2,7 @@
 
 ## Current state
 
-The current `0.2.0.dev0` release candidate is an engineering foundation. Its 24-frame
+The current `0.2.0.dev1` release candidate is an engineering foundation. Its 24-frame
 procedural city-loop is a fixture, not BDD100K, COCO, MOT, KITTI, or nuScenes.
 `evaluation_authorized=false`, `frozen=false`, and
 `benchmark_claim_available=false` are deliberate.

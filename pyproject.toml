@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "roadsense-perception"
-version = "0.2.0.dev0"
+version = "0.2.0.dev1"
 description = "Evidence-first 2D perception laboratory for detection, segmentation, and tracking"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"

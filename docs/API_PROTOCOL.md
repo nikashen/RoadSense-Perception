@@ -14,9 +14,12 @@ The local server also serves `/`, `/app.js`, `/styles.css`, and
 an asset request cannot shadow a versioned endpoint. Responses use strict
 Pydantic models and reject malformed fixture payloads at the server boundary.
 
-`/api/v1/demo` returns `roadsense.demo/v1`, including a fixture ID, canvas,
-ordered frames, objects in `xywh` display coordinates, segmentation polygons,
-separate detection and segmentation ontologies, and evidence flags.
+`/api/v1/demo` returns `roadsense.demo/v2`, including a fixture ID, canvas,
+ordered frames, continuous scene `actors`, prediction `objects` in `xywh`
+display coordinates, segmentation polygons, separate detection and segmentation
+ontologies, and evidence flags. Actors drive the physical illustration while
+objects drive boxes, confidence filtering, and track diagnostics, so deliberate
+prediction errors do not make scene participants teleport or disappear.
 The v1 fixture contract contains exactly 24 ordered frames at 100 ms cadence.
 `/api/v1/report` returns a sanitized fixture report with
 the same explicit non-benchmark boundary. Its 16-character `report_id` binds
